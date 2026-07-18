@@ -1,7 +1,7 @@
 Windows Registry Editor Version 5.00
 
-; 允許 Premiere 載入「未簽章」的自製面板(開發者模式)。
-; 只需執行一次。涵蓋 CEP 10/11/12,對應不同 Premiere 版本。
+; Allow Premiere to load unsigned self-made panels (developer mode).
+; Run once. Covers CEP 10/11/12 for different Premiere versions.
 
 [HKEY_CURRENT_USER\Software\Adobe\CSXS.10]
 "PlayerDebugMode"="1"
