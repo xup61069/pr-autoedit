@@ -126,7 +126,7 @@ def mux_back(video_path: str, clean_wav: str, out_mp4: str) -> str:
     # 路線 1:無損複製(絕大多數影片幾秒完成)
     subprocess.run([
         "ffmpeg", "-y", "-i", video_path, "-i", clean_wav,
-        "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+        "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ac", "2",
         "-map", "0:v", "-map", "1:a", "-shortest", out_mp4,
     ], check=True, capture_output=True)
     if _video_stream_playable(out_mp4):
@@ -139,7 +139,7 @@ def mux_back(video_path: str, clean_wav: str, out_mp4: str) -> str:
             "ffmpeg", "-y", "-i", video_path, "-i", clean_wav,
             "-map", "0:v", "-map", "1:a",
             "-c:v", "hevc_nvenc", "-preset", "p5", "-cq", "23",
-            "-c:a", "aac", "-b:a", "192k", "-shortest", out_mp4,
+            "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-shortest", out_mp4,
         ], check=True, capture_output=True)
     except subprocess.CalledProcessError:
         # 路線 3:沒有 NVIDIA GPU 或 nvenc 不可用,退回 CPU(較慢)
@@ -148,28 +148,26 @@ def mux_back(video_path: str, clean_wav: str, out_mp4: str) -> str:
             "ffmpeg", "-y", "-i", video_path, "-i", clean_wav,
             "-map", "0:v", "-map", "1:a",
             "-c:v", "libx265", "-preset", "medium", "-crf", "23",
-            "-c:a", "aac", "-b:a", "192k", "-shortest", out_mp4,
+            "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-shortest", out_mp4,
         ], check=True, capture_output=True)
     return out_mp4
 
 
-def process(video_path: str, work_dir: str) -> tuple[str, str]:
-    """
-    完整音訊清理流程。回傳 (乾淨WAV路徑, 混回影片路徑)。
-    乾淨WAV 給轉錄用;混回影片給 PR / 渲染用。
-    """
+def clean_audio(video_path: str, work_dir: str) -> str:
+    """清理音訊:抽音軌 →(降噪)→(響度標準化)。回傳乾淨的 WAV 路徑。
+
+    注意:這一步『不』混回影片。混音留到決策引擎算完靜音段之後,
+    才能一併把快轉段的聲音抹掉(見 gate_speed_audio 與 pipeline)。"""
     raw_wav = os.path.join(work_dir, "01_raw.wav")
     clean_wav = os.path.join(work_dir, "01_clean.wav")
     norm_wav = os.path.join(work_dir, "01_clean_norm.wav")
-    clean_mp4 = os.path.join(work_dir, "01_clean_av.mp4")
 
     extract_audio(video_path, raw_wav)
 
-    # "none":不處理聲音,只抽出音軌供轉錄,影片來源沿用原始檔。
-    # 適合第一次測試整條管線,或本來就不需要音訊清理的情況。
+    # "none":不做降噪與標準化,直接用原始音軌(適合快速測試整條管線)
     if cfg.AUDIO_MODE == "none":
         print("  跳過聲音處理(AUDIO_MODE=none),使用原始音訊")
-        return raw_wav, video_path
+        return raw_wav
 
     if cfg.AUDIO_MODE == "vst":
         clean_vst(raw_wav, clean_wav)
@@ -177,7 +175,26 @@ def process(video_path: str, work_dir: str) -> tuple[str, str]:
         clean_opensource(raw_wav, clean_wav)
 
     loudnorm(clean_wav, norm_wav)
-    mux_back(video_path, norm_wav, clean_mp4)
+    print(f"  音訊清理完成 -> {norm_wav}")
+    return norm_wav
 
-    print(f"  音訊清理完成 -> {clean_mp4}")
-    return norm_wav, clean_mp4
+
+def gate_speed_audio(in_wav: str, out_wav: str, segments, fps: float) -> str:
+    """把「快轉(靜音)段」的音訊抹成無聲,其餘原封不動。
+
+    原理:在 Premiere 裡快轉播放時,若那段本來就無聲,加速後仍是無聲,
+    就不會有加速造成的尖聲(花栗鼠音)。回傳處理後的 WAV 路徑。"""
+    import soundfile as sf
+    audio, sr = sf.read(in_wav)
+    n = len(audio)
+    muted = 0
+    for s in segments:
+        if s.action == "speed":
+            a = max(0, int(s.start / fps * sr))
+            b = min(n, int(s.end / fps * sr))
+            if b > a:
+                audio[a:b] = 0
+                muted += 1
+    sf.write(out_wav, audio, sr)
+    print(f"  已將 {muted} 個快轉段的聲音抹為無聲")
+    return out_wav

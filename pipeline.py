@@ -71,15 +71,17 @@ def main():
     fps = args.fps or get_fps(args.video)
     print(f"\n=== 處理 {name}(fps={fps})===\n")
 
-    # --- 1. 音訊清理 ---
+    # --- 1. 音訊清理(只清理,先不混回影片)---
     clean_mp4 = os.path.join(work, "01_clean_av.mp4")
-    clean_wav = os.path.join(work, "01_clean_norm.wav")
-    if args.skip_audio and os.path.exists(clean_mp4):
-        print("[1/5] 跳過音訊清理(用現有檔案)")
+    norm_wav = os.path.join(work, "01_clean_norm.wav")
+    raw_wav = os.path.join(work, "01_raw.wav")
+    if args.skip_audio and (os.path.exists(norm_wav) or os.path.exists(raw_wav)):
+        print("[1/5] 跳過音訊清理(用現有乾淨音訊)")
+        clean_wav = norm_wav if os.path.exists(norm_wav) else raw_wav
     else:
         print("[1/5] 音訊清理")
-        from modules.audio_clean import process
-        clean_wav, clean_mp4 = process(args.video, work)
+        from modules.audio_clean import clean_audio
+        clean_wav = clean_audio(args.video, work)
 
     # --- 2. 轉錄 ---
     print("[2/5] 語音轉錄")
@@ -99,6 +101,15 @@ def main():
     n_del = sum(1 for s in segments if s.action == "delete")
     n_spd = sum(1 for s in segments if s.action == "speed")
     print(f"  {len(segments)} 段:刪除 {n_del}、快轉 {n_spd}")
+
+    # --- 3.5 混回影片:視需要先把快轉段的聲音抹成無聲,再混音 ---
+    from modules.audio_clean import gate_speed_audio, mux_back
+    audio_for_mux = clean_wav
+    if cfg.MUTE_SPEED_AUDIO and any(s.action == "speed" for s in segments):
+        audio_for_mux = gate_speed_audio(
+            clean_wav, os.path.join(work, "01_clean_gated.wav"), segments, fps)
+    print("  混回影片...")
+    mux_back(args.video, audio_for_mux, clean_mp4)
 
     table = RemapTable(segments, fps)
 

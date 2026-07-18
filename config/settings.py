@@ -32,6 +32,11 @@ SILENCE_ACTION = "speed"
 # 若 SILENCE_ACTION="speed",快轉倍率
 SILENCE_SPEED_FACTOR = 6.0
 
+# 若 SILENCE_ACTION="speed",是否把快轉段的聲音抹成無聲。
+# True = 看得到快轉畫面,但那段沒有聲音(避免加速造成的尖聲/花栗鼠音)
+# False = 快轉段保留原聲(會變高音)
+MUTE_SPEED_AUDIO = True
+
 # 保護緩衝:靜音段前後各保留這麼多秒,避免切太緊把氣音也切掉
 SILENCE_PADDING_SEC = 0.15
 
