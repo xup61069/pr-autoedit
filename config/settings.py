@@ -59,19 +59,33 @@ MARKER_MIN_DURATION_MS = 200
 MARKER_MAX_CONFIDENCE = 0.9
 
 # ============================================================
-# Whisper
+# 語音辨識(ASR)
 # ============================================================
 
+# 使用哪個辨識引擎:
+#   "faster-whisper" = 目前實作(Whisper,泛用、支援多語)
+#   "funasr"         = 預留:阿里 FunASR / Paraformer,中文通常更準(尚未實作)
+# 要接新引擎,只需在 modules/transcribe.py 加一個對應的函式,
+# 輸出一樣的 list[Word] 即可,其餘管線完全不用動。
+ASR_ENGINE = "faster-whisper"
+
+# --- Whisper 專用參數(ASR_ENGINE="faster-whisper" 時生效)---
 WHISPER_MODEL = "large-v3"       # 準確度優先;GPU 不夠力可改 "medium"
 WHISPER_LANGUAGE = "zh"
 WHISPER_DEVICE = "cuda"          # 你有 NVIDIA GPU
 WHISPER_COMPUTE_TYPE = "float16" # GPU 用 float16;若報錯改 "int8_float16"
 
-# 專有名詞表:提高辨識準確度,把你常講的軟體名、術語列在這
-WHISPER_INITIAL_PROMPT = (
-    "以下是一段中文教學影片的口白,內容關於影片剪輯。"
-    "常見詞彙:Premiere、Pro、VST、EQ、降噪、時間軸、字幕、渲染、外掛。"
-)
+# 你常講的專有名詞/術語/軟體名/人名,列在這裡可提高辨識準確度。
+# 例:剪 Premiere 教學就放剪輯詞;剪 FL Studio 就放編曲詞。兩種都放也可以。
+CUSTOM_VOCAB = [
+    "Premiere", "Pro", "FL Studio", "Pattern", "Mixer", "MIDI",
+    "VST", "EQ", "時間軸", "字幕", "渲染", "外掛",
+]
+
+# 提示詞(給辨識引擎的開場提示)。
+#   None = 自動用上面的 CUSTOM_VOCAB 組出一句(建議,平常只要改詞表就好)
+#   填一段話 = 完全自訂,忽略 CUSTOM_VOCAB
+WHISPER_INITIAL_PROMPT = None
 
 # ============================================================
 # 音訊清理
@@ -93,3 +107,23 @@ VST_CHAIN = [
 # 目標響度(YouTube 標準)
 TARGET_LUFS = -14.0
 TARGET_TRUE_PEAK = -1.0
+
+
+# ============================================================
+# 個人覆寫(選用)
+# ============================================================
+# 若在 config/ 底下建立一個 settings_local.py,裡面所有「全大寫」的設定
+# 會蓋掉上面的預設值。這個檔不進版控(見 .gitignore),
+# 方便你保留自己的門檻、詞表、VST 路徑,而不動到共用設定、
+# 也不會在更新專案時被覆蓋。
+#
+# 範例 settings_local.py:
+#     CUSTOM_VOCAB = ["我的頻道名", "常用術語"]
+#     SILENCE_SPEED_FACTOR = 8.0
+try:
+    from config import settings_local as _local
+    for _name in dir(_local):
+        if _name.isupper():
+            globals()[_name] = getattr(_local, _name)
+except ImportError:
+    pass
