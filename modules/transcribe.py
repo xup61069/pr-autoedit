@@ -86,17 +86,51 @@ def _transcribe_faster_whisper(audio_path: str) -> list[Word]:
     return words
 
 
-def _transcribe_funasr(audio_path: str) -> list[Word]:
-    """引擎 B(預留):阿里 FunASR / Paraformer,中文通常更準。
+_funasr_model = None   # 模型快取,避免同一次執行重複載入
 
-    尚未實作。要接的話,在這裡呼叫 FunASR 取得詞級時間戳,
-    轉成 list[Word](text 為詞、start/end 為秒)回傳即可,其餘管線不用動。
-    參考:pip install funasr modelscope;Paraformer-zh 有帶時間戳的版本,
-    輸出多為簡體,後段已有 OpenCC 簡轉繁可接。"""
-    raise NotImplementedError(
-        "ASR_ENGINE='funasr' 尚未實作,目前請用 'faster-whisper'。\n"
-        "要接 FunASR:在 modules/transcribe.py 的 _transcribe_funasr() 裡實作,"
-        "回傳 list[Word] 即可,管線其餘部分完全不用改。")
+
+def _transcribe_funasr(audio_path: str) -> list[Word]:
+    """引擎 B:阿里 FunASR / Paraformer-zh。
+
+    適合『純中文、少英文』的內容。注意:對中英夾雜(大量英文術語)的教學片,
+    實測不如 Whisper(英文/數字容易出錯,如 F6→f六、MIDI→谜dy),
+    這類內容建議仍用 faster-whisper。
+
+    做法:用 paraformer + VAD(不掛標點模型,讓 token 與時間戳乾淨 1:1 對齊),
+    再用 OpenCC 簡轉繁,讓後段的繁體詞表與字幕一致。CUSTOM_VOCAB 會當熱詞餵入。
+    依賴:pip install funasr(首次執行自動下載模型約 2GB)。"""
+    from funasr import AutoModel
+    global _funasr_model
+    if _funasr_model is None:
+        print("  載入 FunASR/Paraformer 模型(首次會下載約 2GB)...")
+        _funasr_model = AutoModel(model="paraformer-zh", vad_model="fsmn-vad",
+                                  disable_update=True, log_level="ERROR")
+
+    hotword = " ".join(getattr(cfg, "CUSTOM_VOCAB", []) or [])
+    print("  轉錄中...")
+    res = _funasr_model.generate(input=audio_path, batch_size_s=300,
+                                 hotword=hotword)
+
+    tokens = (res[0].get("text", "") if res else "").split()
+    stamps = (res[0].get("timestamp") if res else None) or []
+
+    # 簡轉繁(Paraformer 輸出簡體;轉成繁體讓決策引擎詞表與字幕一致)
+    try:
+        from opencc import OpenCC
+        _cc = OpenCC("s2tw")
+        convert = _cc.convert
+    except ImportError:
+        print("  (未安裝 opencc,FunASR 輸出維持簡體)")
+        convert = lambda s: s
+
+    words: list[Word] = []
+    for tok, span in zip(tokens, stamps):
+        if not span or len(span) < 2:
+            continue
+        words.append(Word(text=convert(tok),
+                          start=span[0] / 1000.0,     # 毫秒 -> 秒
+                          end=span[1] / 1000.0))
+    return words
 
 
 def _save_cache(words: list[Word], path: str) -> None:

@@ -3,6 +3,10 @@ faster-whisper>=1.0.0
 lxml>=5.0.0
 auto-editor>=24.0.0
 
+# 語音辨識 - 替代引擎(選用):FunASR / Paraformer,中文常更準
+# 要用時把 config.ASR_ENGINE 設為 "funasr";首次執行會自動下載模型(約 2GB)
+# pip install funasr
+
 # 音訊清理 - 開源路線(DeepFilterNet)—— 選用,預設不裝
 # 注意:Python 3.13 目前沒有現成安裝包,需先裝 Rust 才能編譯。
 # 這是「免費降噪」的備援路線;若你走 VST 路線(pedalboard)可不裝。
