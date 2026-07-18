@@ -16,6 +16,8 @@ output/
 *.wav
 *.srt
 *.xml
+# 但 Premiere 面板的設定檔要保留(上面的 *.xml 會誤傷)
+!premiere-panel/**/*.xml
 
 # 轉錄快取
 *_transcript.json

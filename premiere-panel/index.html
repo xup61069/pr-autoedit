@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <h1>PR 自動剪輯</h1>
+
+  <button id="pick" class="btn">1. 選擇影片</button>
+  <div id="videoPath" class="path">尚未選擇影片</div>
+
+  <button id="run" class="btn primary" disabled>2. 一鍵自動剪輯</button>
+
+  <div id="status" class="status">準備就緒</div>
+  <pre id="log" class="log"></pre>
+
+  <div class="hint">
+    完成後會自動把剪好的序列與字幕匯入 Premiere,
+    再開審閱報告。你只要跳著確認 marker。
+  </div>
+
+  <script src="js/CSInterface.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,71 @@
+/* 配合 Premiere 深色介面 */
+* { box-sizing: border-box; }
+body {
+  font-family: "Microsoft JhengHei", system-ui, sans-serif;
+  background: #232323;
+  color: #d8d8d8;
+  margin: 0;
+  padding: 12px;
+  font-size: 13px;
+}
+h1 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 12px;
+  color: #fff;
+}
+.btn {
+  display: block;
+  width: 100%;
+  padding: 9px 12px;
+  margin: 6px 0;
+  border: 1px solid #4a4a4a;
+  border-radius: 5px;
+  background: #333;
+  color: #e8e8e8;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn:hover:not(:disabled) { background: #3d3d3d; }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn.primary {
+  background: #2d6cdf;
+  border-color: #2d6cdf;
+  color: #fff;
+  font-weight: 600;
+}
+.btn.primary:hover:not(:disabled) { background: #3a78e8; }
+.path {
+  font-size: 11px;
+  color: #9a9a9a;
+  word-break: break-all;
+  margin: 2px 0 10px;
+  min-height: 14px;
+}
+.status {
+  margin: 10px 0 6px;
+  padding: 8px 10px;
+  background: #2b2b2b;
+  border-radius: 5px;
+  border-left: 3px solid #2d6cdf;
+  font-size: 12px;
+}
+.log {
+  background: #1a1a1a;
+  color: #b5b5b5;
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 8px;
+  border-radius: 5px;
+  height: 150px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
+.hint {
+  font-size: 11px;
+  color: #888;
+  margin-top: 10px;
+  line-height: 1.6;
+}
