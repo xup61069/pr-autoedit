@@ -74,23 +74,35 @@ class RemapTable:
     # 把 Whisper 的詞級時間戳,轉成剪輯後的字幕行
     # 被剪掉的詞自動略過;相鄰的詞聚合成一句
     # -----------------------------------------------------------------
+    # 標點分類:句末(強制斷句)與句中逗號(較長時才斷)
+    _SENT_END = "。！？!?…"
+    _CLAUSE_END = ",,、;;::"
+
     def build_subtitles(self, words: list[Word],
                         max_chars: int = 18,
                         max_gap_frames: int = 15) -> list[SubtitleLine]:
+        """把詞級時間戳轉成字幕行。
+
+        斷行優先順序:被剪掉的詞 > 句末標點(。!?)> 明顯停頓 >
+        句中逗號(行已有一定長度時)> 字數上限。盡量讓每行結束在
+        自然的語氣停頓,而不是數到字數就硬斷。行尾的逗號會去掉。"""
         lines: list[SubtitleLine] = []
         buf: list[str] = []
         line_start: Optional[int] = None
         line_end: Optional[int] = None
         idx = 1
+        soft_break = max(6, max_chars // 2)   # 逗號斷行的最短行長
 
         def flush():
             nonlocal buf, line_start, line_end, idx
-            if buf and line_start is not None:
+            # 行尾的句中逗號拿掉(斷行本身已代表停頓),句末標點保留
+            text = "".join(buf).rstrip(self._CLAUSE_END + " ")
+            if text and line_start is not None:
                 lines.append(SubtitleLine(
                     index=idx,
                     start_frame=line_start,
                     end_frame=line_end,
-                    text="".join(buf),
+                    text=text,
                 ))
                 idx += 1
             buf, line_start, line_end = [], None, None
@@ -113,8 +125,8 @@ class RemapTable:
                 flush()
                 continue
 
-            # 距離上一個詞太遠,或超過字數上限 -> 換行;
-            # 但若正好在英文單字中間,先不斷,等單字結束(避免 Pat|tern 這種切法)
+            # 換行時機(加入這個詞之前判斷):時間大跳,或已達字數上限。
+            # 但若正好在英文單字中間,先不斷,等單字結束(避免 Pat|tern)
             mid_word = bool(buf) and _mid_english_word(buf[-1], w.text)
             if line_end is not None and not mid_word and (
                 ts - line_end > max_gap_frames or
@@ -126,6 +138,14 @@ class RemapTable:
                 line_start = ts
             line_end = te
             buf.append(w.text)
+
+            # 加入這個詞之後:遇到標點就順勢斷句,讓行尾落在自然停頓
+            tail = w.text[-1] if w.text else ""
+            line_len = sum(len(x) for x in buf)
+            if tail in self._SENT_END:
+                flush()                                   # 句末 → 一定斷
+            elif tail in self._CLAUSE_END and line_len >= soft_break:
+                flush()                                   # 逗號且行夠長 → 斷
 
         flush()
         return lines

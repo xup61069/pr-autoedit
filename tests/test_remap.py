@@ -128,6 +128,35 @@ def test_subtitles_keep_english_word_intact():
     print("  ✓ 字幕:英文單字不被 max_chars 切斷")
 
 
+def test_subtitles_break_at_punctuation():
+    """字幕應優先在句末標點處斷行,讓每句自成一行"""
+    segs = [Segment(0, 600, "keep")]
+    t = RemapTable(segs, fps=30)
+    words = [
+        Word("大家好。", 0.0, 1.0),
+        Word("今天", 1.0, 1.5),
+        Word("我們", 1.5, 2.0),
+        Word("來聊剪輯。", 2.0, 3.0),
+    ]
+    subs = t.build_subtitles(words, max_chars=18, max_gap_frames=15)
+    assert subs[0].text == "大家好。", subs[0].text
+    assert subs[1].text == "今天我們來聊剪輯。", subs[1].text
+    print("  ✓ 字幕:句末標點正確斷行")
+
+
+def test_subtitles_strip_trailing_comma():
+    """行尾的句中逗號應去掉(斷行本身已代表停頓)"""
+    segs = [Segment(0, 600, "keep")]
+    t = RemapTable(segs, fps=30)
+    words = [
+        Word("這樣東西就會很分開,", 0.0, 2.0),   # 夠長且以逗號結尾 → 斷行
+        Word("對對對", 2.0, 3.0),
+    ]
+    subs = t.build_subtitles(words, max_chars=18)
+    assert subs[0].text == "這樣東西就會很分開", subs[0].text
+    print("  ✓ 字幕:行尾逗號正確去除")
+
+
 def test_ntsc_no_drift():
     """29.97fps 長片不應累積明顯漂移"""
     fps = 29.97
@@ -160,5 +189,7 @@ if __name__ == "__main__":
     test_cuts_recorded()
     test_subtitles_skip_deleted()
     test_subtitles_keep_english_word_intact()
+    test_subtitles_break_at_punctuation()
+    test_subtitles_strip_trailing_comma()
     test_ntsc_no_drift()
     print("\n全部通過 ✓  地基正確,可以往上蓋。")
