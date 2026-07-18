@@ -3,8 +3,11 @@ faster-whisper>=1.0.0
 lxml>=5.0.0
 auto-editor>=24.0.0
 
-# 音訊清理 - 開源路線(DeepFilterNet)
-deepfilternet>=0.5.6
+# 音訊清理 - 開源路線(DeepFilterNet)—— 選用,預設不裝
+# 注意:Python 3.13 目前沒有現成安裝包,需先裝 Rust 才能編譯。
+# 這是「免費降噪」的備援路線;若你走 VST 路線(pedalboard)可不裝。
+# 要用的話,先裝 Rust(https://rustup.rs/)再手動執行:
+#   pip install deepfilternet
 soundfile>=0.12.0
 
 # 音訊清理 - VST 路線(載入你現有的外掛)

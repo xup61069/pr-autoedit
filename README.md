@@ -45,10 +45,12 @@ pr-autoedit/
 
 ```
 python -m venv venv && venv\Scripts\activate
-pip install torch --index-url https://download.pytorch.org/whl/cu121
+pip install torch --index-url https://download.pytorch.org/whl/cu128   # RTX 50 系列用 cu128;舊卡見 SETUP.md
 pip install -r requirements.txt
 python pipeline.py 你的影片.mp4
 ```
+
+> CUDA 版本要對得上顯卡:RTX 50 系列(5080/5090)用 `cu128`,舊卡(30/20 系列)用 `cu121`。細節看 `SETUP.md` 第 5 步。
 
 ## 設計重點
 

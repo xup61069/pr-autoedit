@@ -107,6 +107,27 @@ def test_subtitles_skip_deleted():
     print("  ✓ 字幕:冗詞正確剔除,保留詞正確保留")
 
 
+def test_subtitles_keep_english_word_intact():
+    """英文/數字單字不該被 max_chars 從中間切斷。
+    Whisper 會把 'Pattern' 切成 'P','atter','n' 碎片,字幕不能斷在中間。"""
+    segs = [Segment(0, 300, "keep")]
+    t = RemapTable(segs, fps=30)
+    words = [
+        Word("這", 0.0, 0.3),
+        Word("是", 0.3, 0.6),
+        Word("一", 0.6, 0.9),
+        Word("個", 0.9, 1.2),
+        Word("P", 1.2, 1.4),
+        Word("atter", 1.4, 1.6),
+        Word("n", 1.6, 1.8),
+    ]
+    # max_chars 故意設很小,不修的話一定會斷在英文單字中間
+    subs = t.build_subtitles(words, max_chars=4, max_gap_frames=15)
+    assert any("Pattern" in s.text for s in subs), \
+        f"Pattern 被切斷了:{[s.text for s in subs]}"
+    print("  ✓ 字幕:英文單字不被 max_chars 切斷")
+
+
 def test_ntsc_no_drift():
     """29.97fps 長片不應累積明顯漂移"""
     fps = 29.97
@@ -138,5 +159,6 @@ if __name__ == "__main__":
     test_speed_compresses()
     test_cuts_recorded()
     test_subtitles_skip_deleted()
+    test_subtitles_keep_english_word_intact()
     test_ntsc_no_drift()
     print("\n全部通過 ✓  地基正確,可以往上蓋。")

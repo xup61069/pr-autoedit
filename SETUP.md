@@ -38,11 +38,19 @@ venv\Scripts\activate
 
 ### 5. 裝 PyTorch(CUDA 版)—— 這步最容易錯
 **不要**直接 `pip install torch`,那是 CPU 版,GPU 用不到。
-到 https://pytorch.org/get-started/locally/ 選 Windows + Pip + CUDA 12.x,
-複製它給的指令,大概長這樣:
-```
-pip install torch --index-url https://download.pytorch.org/whl/cu121
-```
+到 https://pytorch.org/get-started/locally/ 選 Windows + Pip,**CUDA 版本要對得上你的顯卡**,複製它給的指令來裝。
+
+> ⚠️ **新顯卡(RTX 50 系列,如 5080/5090)要特別注意**
+> 這些卡是新架構(Blackwell),**必須用 cu128 或更新**,舊的 `cu121` 會裝到但跑不動。
+> 較新的卡:
+> ```
+> pip install torch --index-url https://download.pytorch.org/whl/cu128
+> ```
+> 較舊的卡(RTX 30/20 系列)才用:
+> ```
+> pip install torch --index-url https://download.pytorch.org/whl/cu121
+> ```
+> 不確定的話,以 pytorch.org 官網當下建議的最新 CUDA 版本為準。
 
 裝完驗證 GPU 有被抓到:
 ```
@@ -54,7 +62,11 @@ python -c "import torch; print(torch.cuda.is_available())"
 ```
 pip install -r requirements.txt
 ```
-這步會花幾分鐘。DeepFilterNet 和 faster-whisper 比較大。
+這步會花幾分鐘,faster-whisper 相關套件比較大。
+
+> 免費降噪(DeepFilterNet)預設不裝——它需要先裝 Rust,且在 Python 3.13 上較麻煩。
+> 若你用自己的 VST 外掛降噪(pedalboard,已包含在上面的安裝裡)就不需要它。
+> 想用免費降噪再看 `requirements.txt` 裡的說明。
 
 ### 7. 驗證安裝
 ```

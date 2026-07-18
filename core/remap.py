@@ -95,6 +95,15 @@ class RemapTable:
                 idx += 1
             buf, line_start, line_end = [], None, None
 
+        def _mid_english_word(prev: str, nxt: str) -> bool:
+            """斷點是否落在一個英文/數字單字的中間。
+            Whisper 會把 'Pattern1' 切成 'P','atter','n','1' 等碎片,
+            若剛好斷在碎片之間會把英文單字攔腰切斷,要避免。"""
+            if not prev or not nxt:
+                return False
+            a, b = prev[-1], nxt[0]
+            return a.isascii() and a.isalnum() and b.isascii() and b.isalnum()
+
         for w in words:
             ts = self.map_frame(w.start_frame(self.fps))
             te = self.map_frame(max(w.start_frame(self.fps),
@@ -104,8 +113,10 @@ class RemapTable:
                 flush()
                 continue
 
-            # 距離上一個詞太遠,或超過字數上限 -> 換行
-            if line_end is not None and (
+            # 距離上一個詞太遠,或超過字數上限 -> 換行;
+            # 但若正好在英文單字中間,先不斷,等單字結束(避免 Pat|tern 這種切法)
+            mid_word = bool(buf) and _mid_english_word(buf[-1], w.text)
+            if line_end is not None and not mid_word and (
                 ts - line_end > max_gap_frames or
                 sum(len(x) for x in buf) >= max_chars
             ):
