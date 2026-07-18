@@ -1,0 +1,37 @@
+# 虛擬環境
+venv/
+.venv/
+env/
+
+# Python 快取
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# 產物與中繼檔(每支影片跑出來的東西,不進版控)
+output/
+*.mp4
+*.wav
+*.srt
+*.xml
+
+# 轉錄快取
+*_transcript.json
+
+# Whisper 下載的模型(很大,各自下載)
+*.bin
+models/
+
+# 作業系統雜項
+.DS_Store
+Thumbs.db
+
+# 編輯器
+.vscode/
+.idea/
+*.swp
+
+# 個人設定備份(若你想保留自己的門檻設定,可以複製一份 settings.local.py)
+config/settings.local.py

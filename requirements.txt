@@ -1,0 +1,18 @@
+# 核心(一定要裝)
+faster-whisper>=1.0.0
+lxml>=5.0.0
+auto-editor>=24.0.0
+
+# 音訊清理 - 開源路線(DeepFilterNet)
+deepfilternet>=0.5.6
+soundfile>=0.12.0
+
+# 音訊清理 - VST 路線(載入你現有的外掛)
+pedalboard>=0.9.0
+
+# 字幕簡轉繁
+opencc-python-reimplemented>=0.1.7
+
+# 注意:
+# 1. torch 要另外裝 CUDA 版本(見 SETUP.md),不要用 pip 預設的 CPU 版
+# 2. ffmpeg 要另外裝系統執行檔並加入 PATH,不是 pip 套件
