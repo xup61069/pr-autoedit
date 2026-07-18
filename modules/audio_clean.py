@@ -13,8 +13,32 @@
 """
 
 from __future__ import annotations
-import subprocess, os
+import subprocess, os, sys, contextlib
 import config.settings as cfg
+
+
+@contextlib.contextmanager
+def _suppress_native_output():
+    """暫時關掉作業系統層級的 stdout/stderr。
+
+    有些 VST 外掛(例如 VoiceFX)會從 C++ 底層直接狂印除錯訊息,
+    這些不經過 Python 的 print,得在檔案描述元層級攔截才壓得下來。
+    處理一支 3 分鐘的片可能吐出好幾 MB,不關掉會刷爆命令列。
+    """
+    sys.stdout.flush()
+    sys.stderr.flush()
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    saved_out, saved_err = os.dup(1), os.dup(2)
+    try:
+        os.dup2(devnull, 1)
+        os.dup2(devnull, 2)
+        yield
+    finally:
+        os.dup2(saved_out, 1)
+        os.dup2(saved_err, 2)
+        os.close(devnull)
+        os.close(saved_out)
+        os.close(saved_err)
 
 
 def extract_audio(video_path: str, out_wav: str) -> str:
@@ -36,16 +60,22 @@ def clean_vst(in_wav: str, out_wav: str) -> str:
         raise RuntimeError(
             "config.VST_CHAIN 是空的。請在 settings.py 填入你的 .vst3 路徑。")
 
-    print(f"  載入 {len(cfg.VST_CHAIN)} 個 VST 外掛...")
-    plugins = [load_plugin(p) for p in cfg.VST_CHAIN]
-    board = Pedalboard(plugins)
+    print(f"  載入 {len(cfg.VST_CHAIN)} 個 VST 外掛並處理...")
+    # 外掛載入與處理都包在 _suppress_native_output 裡,壓掉底層除錯訊息
+    with _suppress_native_output():
+        plugins = [load_plugin(p) for p in cfg.VST_CHAIN]
+        board = Pedalboard(plugins)
 
-    with AudioFile(in_wav) as f:
-        audio = f.read(f.frames)
-        sr = f.samplerate
-    processed = board(audio, sr)
-    with AudioFile(out_wav, "w", sr, processed.shape[0]) as f:
-        f.write(processed)
+        with AudioFile(in_wav) as f:
+            audio = f.read(f.frames)
+            sr = f.samplerate
+        processed = board(audio, sr)
+        with AudioFile(out_wav, "w", sr, processed.shape[0]) as f:
+            f.write(processed)
+        # 趁底層輸出還關著,主動回收外掛物件,免得它在程式結束時才吐清理訊息
+        import gc
+        del board, plugins
+        gc.collect()
     return out_wav
 
 

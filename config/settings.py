@@ -76,12 +76,13 @@ WHISPER_INITIAL_PROMPT = (
 #   "vst"        = 載入你的 VST 鏈(需先填 VST_CHAIN)
 #   "opensource" = DeepFilterNet 降噪(需另外安裝 Rust 才能裝這個套件)
 #   "none"       = 不處理聲音,直接用原始音訊(第一次測試整條管線用這個最快)
-AUDIO_MODE = "none"
+AUDIO_MODE = "vst"
 
 # VST 模式:你的 .vst3 檔案路徑,依序套用(降噪->EQ->壓縮->limiter)
 VST_CHAIN = [
-    # r"C:\Program Files\Common Files\VST3\你的降噪.vst3",
-    # r"C:\Program Files\Common Files\VST3\你的EQ.vst3",
+    # NVIDIA AI 降噪。注意:這個外掛要指到「內層」的 .vst3 檔,不是外層資料夾
+    r"C:\Program Files\Common Files\VST3\TonPlugIns\VoiceFX.vst3\Contents\x86_64-win\VoiceFX.vst3",
+    # 之後想加 EQ / 壓縮,再把 .vst3 路徑接在這後面
 ]
 
 # 目標響度(YouTube 標準)
