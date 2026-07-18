@@ -103,14 +103,53 @@ def loudnorm(in_wav: str, out_wav: str) -> str:
     return out_wav
 
 
+def _video_stream_playable(path: str) -> bool:
+    """驗證檔案的視訊串流是否真的能解出畫面。
+    有些影片(例如某些 bandicam 4K HEVC 螢幕錄影)『複製』串流後
+    會產生看似成功、實際上讀不動的檔,必須實際解一幀才驗得出來。"""
+    if not os.path.exists(path) or os.path.getsize(path) == 0:
+        return False
+    r = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", path,
+         "-map", "0:v", "-frames:v", "1", "-f", "null", "-"],
+        capture_output=True, text=True,
+    )
+    return r.returncode == 0 and "no packets" not in (r.stderr or "")
+
+
 def mux_back(video_path: str, clean_wav: str, out_mp4: str) -> str:
-    """把清理後的音訊混回影片。視訊串流直接複製,不重編碼,幾秒完成。
-    這個檔案就是 Premiere XML 要引用的來源 —— 時間軸上聽到的直接是乾淨聲音。"""
+    """把清理後的音訊混回影片。
+    這個檔案就是 Premiere XML 要引用的來源 —— 時間軸上聽到的直接是乾淨聲音。
+
+    先試「無損複製」視訊串流(快、不掉畫質);少數影片複製後會壞,
+    自動改用 GPU(hevc_nvenc)重新編碼,GPU 不可用再退回 CPU。"""
+    # 路線 1:無損複製(絕大多數影片幾秒完成)
     subprocess.run([
         "ffmpeg", "-y", "-i", video_path, "-i", clean_wav,
-        "-c:v", "copy", "-map", "0:v", "-map", "1:a",
-        "-shortest", out_mp4,
+        "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+        "-map", "0:v", "-map", "1:a", "-shortest", out_mp4,
     ], check=True, capture_output=True)
+    if _video_stream_playable(out_mp4):
+        return out_mp4
+
+    # 路線 2:複製後的檔壞了,改用 GPU 重新編碼
+    print("  (此影片無法無損複製,改用 GPU 重新編碼,約需數十秒...)")
+    try:
+        subprocess.run([
+            "ffmpeg", "-y", "-i", video_path, "-i", clean_wav,
+            "-map", "0:v", "-map", "1:a",
+            "-c:v", "hevc_nvenc", "-preset", "p5", "-cq", "23",
+            "-c:a", "aac", "-b:a", "192k", "-shortest", out_mp4,
+        ], check=True, capture_output=True)
+    except subprocess.CalledProcessError:
+        # 路線 3:沒有 NVIDIA GPU 或 nvenc 不可用,退回 CPU(較慢)
+        print("  (GPU 編碼不可用,改用 CPU 編碼,可能較慢...)")
+        subprocess.run([
+            "ffmpeg", "-y", "-i", video_path, "-i", clean_wav,
+            "-map", "0:v", "-map", "1:a",
+            "-c:v", "libx265", "-preset", "medium", "-crf", "23",
+            "-c:a", "aac", "-b:a", "192k", "-shortest", out_mp4,
+        ], check=True, capture_output=True)
     return out_mp4
 
 
