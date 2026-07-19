@@ -80,7 +80,12 @@ def main():
                     help="覆寫幀率(預設自動偵測)")
     ap.add_argument("--skip-audio", action="store_true",
                     help="跳過音訊清理(已有 01_clean_av.mp4)")
+    ap.add_argument("--mode", choices=["live", "baked"], default=None,
+                    help="覆寫交付方式(面板「重算剪輯」按鈕用,不動設定檔)")
     args = ap.parse_args()
+
+    if args.mode:
+        cfg.DELIVERY_MODE = args.mode
 
     if not os.path.exists(args.video):
         sys.exit(f"找不到檔案:{args.video}")
@@ -152,8 +157,25 @@ def main():
             and any(s.action == "speed" for s in segments):
         audio_for_mux = gate_speed_audio(
             clean_wav, os.path.join(work, "01_clean_gated.wav"), segments, fps)
-    print("  混回影片...")
-    mux_back(args.video, audio_for_mux, clean_mp4)
+
+    # 重算模式(--skip-audio)時,若上次混好的影片內容相同就直接沿用,
+    # 免得每按一次「重算剪輯」都要重新混音(4K 影片一次要幾十秒)
+    mux_kind = "gated" if audio_for_mux != clean_wav else "plain"
+    mux_info = os.path.join(work, "01_mux_info.txt")
+    reuse_mux = False
+    if args.skip_audio and os.path.exists(clean_mp4) and os.path.exists(mux_info):
+        try:
+            with open(mux_info, "r", encoding="utf-8") as f:
+                reuse_mux = f.read().strip() == mux_kind
+        except OSError:
+            pass
+    if reuse_mux:
+        print("  沿用上次混好的影片(內容相同,不用重混)")
+    else:
+        print("  混回影片...")
+        mux_back(args.video, audio_for_mux, clean_mp4)
+        with open(mux_info, "w", encoding="utf-8") as f:
+            f.write(mux_kind)
 
     table = RemapTable(segments, fps)
 

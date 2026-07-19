@@ -147,6 +147,14 @@ WHISPER_INITIAL_PROMPT = None
 #   "none"       = 不處理聲音,直接用原始音訊(第一次測試整條管線用這個最快)
 AUDIO_MODE = "vst"
 
+# 降噪要不要「烘進」音檔:
+#   False = 不烘(建議,活專案理念):交出去的聲音保持原始錄音
+#           (只做響度標準化),降噪交給 Premiere——在音軌混音器
+#           對 A1 軌掛一次 VoiceFX,整軌生效、隨時可調可關。
+#   True  = 烘進去(舊行為):先用下面的 VST 鏈把聲音處理好再交接,
+#           之後在 Premiere 裡改不了。
+VST_BAKE = False
+
 # VST 模式:你的 .vst3 檔案路徑,依序套用(降噪->EQ->壓縮->limiter)
 VST_CHAIN = [
     # NVIDIA AI 降噪。注意:這個外掛要指到「內層」的 .vst3 檔,不是外層資料夾

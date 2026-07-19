@@ -29,17 +29,25 @@
 
 ```
 影片
- → audio_clean.clean_audio   清理音訊(降噪/標準化),只輸出乾淨 WAV(先不混影片)
+ → audio_clean.clean_audio   清理音訊(響度標準化;VST_BAKE=True 才把降噪烘進去)
  → transcribe.py             詞級轉錄(唯一真相來源,只轉一次,有快取;引擎可換)
- → decision.py               判定每一段 keep / delete / speed,輸出 Segment 清單
- → audio_clean.gate+mux_back 把快轉段音訊抹靜音,再把乾淨音訊混回影片成 mp4
+ → audio_probe.py            能量偵測「沒講話但有聲音」的區間(音樂/音效,用原始音訊)
+ → decision.py               判定每一段 keep / delete / speed / 音樂保護,輸出 Segment 清單
+ → audio_clean.gate+mux_back 把快轉段音訊抹靜音(僅 baked 模式),混回影片成 mp4
  → remap.py                  建立時間戳映射表,字幕和 marker 都從這裡衍生
- → premiere_xml.py / subtitles.py / report.py   產生審閱檔案
+ → premiere_xml.py / subtitles.py / report.py   產生交付檔案
 ```
 
-⚠️ **混音刻意排在決策之後**:因為要先知道哪些是「靜音快轉段」,才能在混回影片前
-把那幾段的聲音抹成無聲(config.MUTE_SPEED_AUDIO),避免 Premiere 快轉播放時的尖聲。
-不要為了「早點產出 mp4」把混音移回清理階段,那樣就抹不到靜音了。
+**兩種交付方式(config.DELIVERY_MODE)**:
+- `live`(預設,活專案):`premiere_xml.export_live_xml` 自製 FCP7 XML,所有段落
+  切開但全保留(start==in、end==out),用標籤色分類(靜音=Rose、音樂=Caribbean、
+  冗詞=Violet)。決策只是「建議」,使用者在 Premiere 裡批次處理、隨時反悔。
+  剪完後可用 `modules/live_subs.py` 依序列實際版面重新對位字幕(P5)。
+- `baked`(舊模式):auto-editor 產 XML,決策直接烘進去(cut/timeremap)。
+
+⚠️ **混音刻意排在決策之後**:baked 模式要先知道哪些是「靜音快轉段」,才能在混回
+影片前把那幾段的聲音抹成無聲(config.MUTE_SPEED_AUDIO),避免 Premiere 快轉播放
+時的尖聲。live 模式不抹(快轉還沒發生)。不要把混音移回清理階段。
 
 轉錄引擎可切換(config.ASR_ENGINE:faster-whisper / funasr),各引擎都回傳一樣的
 `list[Word]`,要加新引擎只在 transcribe.py 補一個函式,其餘管線不用動。

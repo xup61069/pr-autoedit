@@ -33,9 +33,30 @@
     <div id="status" class="status">準備就緒</div>
     <pre id="log" class="log"></pre>
 
+    <!-- 剪輯後工具:活專案的「隨時可改」按鈕(跑完一次剪輯後出現) -->
+    <div class="section" id="afterSec" style="display:none">
+      <div class="section-head" id="afterHead">
+        <span>3. 剪輯後工具(隨時可用)</span><span id="afterToggle" class="chev">▾</span>
+      </div>
+      <div id="afterBody" class="section-body">
+        <button id="rebuild" class="btn">重算剪輯 → 匯入新序列</button>
+        <div class="hint">改了任何設定(交付方式、停頓處理、快轉倍率…)後按這顆:
+          用新設定重算(幾秒,不重跑辨識)並匯入一個新序列。舊序列不會動,隨時可反悔。</div>
+        <button id="applyVst" class="btn">幫目前序列掛降噪(實驗)</button>
+        <div class="hint">試著把 VoiceFX 掛到目前序列的每個聲音片段(音樂段除外),
+          之後在「效果控制」隨時調整。若失敗:視窗 &gt; 音軌混音器,
+          在 A1 軌最上面的效果插槽選 VoiceFX,一次搞定、整軌生效、隨時可調。</div>
+        <button id="subsFromSeq" class="btn">用目前序列產生字幕</button>
+        <div class="hint">在 Premiere 剪完之後按這顆:依時間軸目前的實際樣子重新對位字幕
+          (被你刪掉的內容自動消失、快轉段自動壓縮),並匯入新的 SRT。</div>
+        <div id="afterMsg" class="savemsg"></div>
+      </div>
+    </div>
+
     <div class="hint">
-      完成後會自動把剪好的序列與字幕匯入 Premiere,再開審閱報告。
-      你只要跳著確認 marker。
+      完成後會自動把序列與字幕匯入 Premiere。活專案模式下片段全保留:
+      粉紅=靜音、青綠=音樂、紫=冗詞,時間軸右鍵「標籤 &gt; 選取標籤群組」
+      可一次選同色片段批次刪除或改速度。
     </div>
   </div>
 

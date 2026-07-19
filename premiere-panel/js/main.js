@@ -18,6 +18,7 @@
   var controls = {};         // key -> 讀值函式
   var fieldMeta = [];        // [{f, wrap, body}] 供 show_if 連動顯示用
   var groupSections = [];    // [{sec, body}] 供隱藏整個空分組用
+  var lastVideo = null;      // 最近一次成功處理的影片(剪輯後工具用)
 
   var $ = function (id) { return document.getElementById(id); };
   function setStatus(t) { $("status").textContent = t; }
@@ -404,10 +405,161 @@
       var xml = toFwd(path.join(outDir, "04_project.xml"));
       var srt = toFwd(path.join(outDir, "04_subtitles.srt"));
       cs.evalScript('prImportEditedProject("' + xml + '","' + srt + '")', function (r) {
-        if (r && r.indexOf("OK") === 0) setStatus("完成 ✓ 已匯入剪好的序列與字幕,請在 Premiere 審閱 marker");
+        if (r && r.indexOf("OK") === 0) setStatus("完成 ✓ 已匯入序列與字幕(活專案:同色片段可批次處理)");
         else setStatus("Python 跑完了,但匯入時出錯:" + r);
         $("run").disabled = false;
+        rememberVideo(selectedVideo);
       });
     });
   }
+
+  // =====================================================================
+  //  剪輯後工具 —— 活專案的「隨時可改」按鈕(P3/P4/P5)
+  // =====================================================================
+
+  function outDirOf(video) {
+    return path.join(PROJECT_DIR, "output",
+      path.basename(video, path.extname(video)));
+  }
+
+  // 記住最近處理的影片:跑完出現「剪輯後工具」,面板重開也還在
+  function rememberVideo(video) {
+    if (!video) return;
+    lastVideo = video;
+    try { window.localStorage.setItem("pr_last_video", video); } catch (e) {}
+    $("afterSec").style.display = "block";
+  }
+  (function restoreLast() {
+    var v = null;
+    try { v = window.localStorage.getItem("pr_last_video"); } catch (e) {}
+    if (v && fs.existsSync(v) && fs.existsSync(outDirOf(v))) {
+      lastVideo = v;
+      $("afterSec").style.display = "block";
+    }
+  })();
+
+  // 剪輯後工具區塊的摺疊
+  $("afterHead").addEventListener("click", function () {
+    var body = $("afterBody");
+    var open = body.style.display === "none";
+    body.style.display = open ? "block" : "none";
+    $("afterToggle").textContent = open ? "▾" : "▸";
+  });
+
+  function afterSay(t, ok) {
+    var m = $("afterMsg");
+    m.textContent = t;
+    m.style.color = ok ? "#2e8b57" : "#e06c6c";
+  }
+  function setAfterButtons(enabled) {
+    ["rebuild", "applyVst", "subsFromSeq"].forEach(function (id) {
+      $(id).disabled = !enabled;
+    });
+  }
+
+  // ---------- P3:重算剪輯(快)→ 匯入新序列 ----------
+  $("rebuild").addEventListener("click", function () {
+    if (!lastVideo) return;
+    setAfterButtons(false);
+    afterSay("用目前設定重算中…(不重跑辨識,通常幾秒)", true);
+    saveSettings(function () {
+      var proc = cp.spawn(PYTHON, ["pipeline.py", lastVideo, "--skip-audio"],
+        { cwd: PROJECT_DIR });
+      proc.stdout.on("data", function (d) { appendLog(d.toString()); });
+      proc.stderr.on("data", function (d) { appendLog(d.toString()); });
+      proc.on("error", function (e) {
+        afterSay("無法啟動 Python:" + e.message, false); setAfterButtons(true);
+      });
+      proc.on("close", function (code) {
+        if (code !== 0) {
+          afterSay("重算失敗(代碼 " + code + "),見下方訊息", false);
+          setAfterButtons(true); return;
+        }
+        var outDir = outDirOf(lastVideo);
+        var xml = toFwd(path.join(outDir, "04_project.xml"));
+        var srt = toFwd(path.join(outDir, "04_subtitles.srt"));
+        cs.evalScript('prImportEditedProject("' + xml + '","' + srt + '")',
+          function (r) {
+            if (r && r.indexOf("OK") === 0) {
+              afterSay("已匯入新序列 ✓(舊序列還在,不喜歡新的就刪掉它)", true);
+            } else { afterSay("重算完成,但匯入出錯:" + r, false); }
+            setAfterButtons(true);
+          });
+      });
+    });
+  });
+
+  // ---------- P4:幫目前序列掛降噪(QE 實驗;失敗教用音軌混音器) ----------
+  function vstEffectName(cb) {
+    // 從 VST 鏈第一個外掛的檔名推效果名(VoiceFX.vst3 -> VoiceFX)
+    function fromValues(values) {
+      var chain = (values && values.VST_CHAIN) || [];
+      if (!chain.length) return null;
+      var base = String(chain[0]).replace(/\\/g, "/").split("/").pop();
+      return base.replace(/\.vst3$/i, "");
+    }
+    if (settingsData) { cb(fromValues(settingsData.values)); return; }
+    cp.execFile(PYTHON, ["ui_settings.py", "dump"],
+      { cwd: PROJECT_DIR, maxBuffer: 4 * 1024 * 1024 },
+      function (err, stdout) {
+        if (err) { cb(null); return; }
+        try { cb(fromValues(JSON.parse(stdout).values)); }
+        catch (e) { cb(null); }
+      });
+  }
+
+  var MIXER_HINT = "請改用穩定做法:視窗 > 音軌混音器,A1 軌最上面的效果插槽選 " +
+    "VoiceFX,一次搞定、整軌生效、隨時可調。";
+
+  $("applyVst").addEventListener("click", function () {
+    setAfterButtons(false);
+    afterSay("嘗試把降噪掛到目前序列…", true);
+    vstEffectName(function (name) {
+      if (!name) {
+        afterSay("設定裡沒有 VST 外掛路徑。" + MIXER_HINT, false);
+        setAfterButtons(true); return;
+      }
+      // 音樂段不掛降噪(降噪是衝著人聲設計的,會把音樂當噪音削掉)
+      cs.evalScript('prApplyAudioEffect("' + name + '","音樂")', function (r) {
+        if (r && r.indexOf("OK") === 0) {
+          var parts = r.split(" ");
+          afterSay("已掛到 " + parts[1] + " 個聲音片段 ✓ 到「效果控制」隨時調整;" +
+            "不滿意可 Ctrl+Z 復原", true);
+        } else if (r === "NOFX") {
+          afterSay("Premiere 效果清單裡找不到「" + name + "」。" + MIXER_HINT, false);
+        } else {
+          afterSay("掛效果失敗:" + r + " " + MIXER_HINT, false);
+        }
+        setAfterButtons(true);
+      });
+    });
+  });
+
+  // ---------- P5:用目前序列的實際版面產生字幕 ----------
+  $("subsFromSeq").addEventListener("click", function () {
+    if (!lastVideo) return;
+    setAfterButtons(false);
+    afterSay("讀取目前序列的版面…", true);
+    var outDir = outDirOf(lastVideo);
+    var layout = toFwd(path.join(outDir, "05_layout.json"));
+    cs.evalScript('prDumpSequenceLayout("' + layout + '")', function (r) {
+      if (!r || r.indexOf("OK") !== 0) {
+        afterSay("讀不到序列版面:" + r, false); setAfterButtons(true); return;
+      }
+      afterSay("依序列版面對位字幕中…", true);
+      cp.execFile(PYTHON, ["-m", "modules.live_subs", layout, outDir],
+        { cwd: PROJECT_DIR, maxBuffer: 4 * 1024 * 1024 },
+        function (err, stdout, stderr) {
+          appendLog(String(stdout || "") + String(stderr || ""));
+          if (err) { afterSay("字幕對位失敗,見下方訊息", false); setAfterButtons(true); return; }
+          var srt = toFwd(path.join(outDir, "05_subtitles_final.srt"));
+          cs.evalScript('prImportFile("' + srt + '")', function (r2) {
+            if (r2 && r2.indexOf("OK") === 0) {
+              afterSay("字幕已對準剪完的時間軸並匯入 ✓(05_subtitles_final.srt)", true);
+            } else { afterSay("字幕產好了,但匯入出錯:" + r2, false); }
+            setAfterButtons(true);
+          });
+        });
+    });
+  });
 })();

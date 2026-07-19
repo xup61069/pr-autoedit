@@ -60,6 +60,27 @@ class RemapTable:
         self._total_frames = timeline_pos
 
     # -----------------------------------------------------------------
+    # 替代建構式:直接用「原始區間 -> 時間軸位置」清單建表
+    # -----------------------------------------------------------------
+    @classmethod
+    def from_spans(cls, spans: list[tuple[int, int, int, float]],
+                fps: float) -> "RemapTable":
+        """給「依 Premiere 目前序列版面產字幕」用(見 modules/live_subs)。
+
+        spans 每列 = (原始起幀, 原始迄幀, 時間軸起幀, 速度倍率)。
+        使用者在 Premiere 刪掉的內容不在清單裡,build_subtitles
+        會自動略過落在其中的詞 —— 字幕跟著剪完的樣子走。"""
+        t = cls.__new__(cls)
+        t.fps = fps
+        t._spans = [_Span(a, b, s, f if f and f > 0 else 1.0)
+                    for a, b, s, f in spans]
+        t._cuts = []
+        t._total_frames = max(
+            (sp.timeline_start + round((sp.orig_end - sp.orig_start) / sp.factor)
+             for sp in t._spans), default=0)
+        return t
+
+    # -----------------------------------------------------------------
     # 核心:把「原始影片幀」映射到「時間軸幀」
     # 落在刪除段的回傳 None(代表這個詞被剪掉了)
     # -----------------------------------------------------------------

@@ -91,6 +91,10 @@ FIELDS = [
 
     # ================= 進階頁 =================
     # --- 分組:降噪外掛(VST)---
+    {"key": "VST_BAKE", "label": "把降噪烘進音檔", "type": "bool",
+     "tier": "advanced", "group": "降噪外掛(VST)",
+     "show_if": {"AUDIO_MODE": ["vst"]},
+     "hint": "不勾(建議):聲音保持原樣,降噪在 Premiere 裡掛 VoiceFX,隨時可調可關;勾:先處理進音檔(舊做法,之後改不了)"},
     {"key": "VST_CHAIN", "label": "VST 外掛路徑", "type": "vstlist",
      "tier": "advanced", "group": "降噪外掛(VST)",
      "show_if": {"AUDIO_MODE": ["vst"]},
@@ -98,12 +102,12 @@ FIELDS = [
     {"key": "VOICEFX_MODE", "label": "降噪:消除什麼", "type": "select",
      "tier": "advanced", "group": "降噪外掛(VST)",
      "options": ["消噪音", "消回音", "兩者都消"],
-     "show_if": {"AUDIO_MODE": ["vst"]},
-     "hint": "VoiceFX(NVIDIA 降噪)要消除的對象。房間有回音就選『兩者都消』"},
+     "show_if": {"AUDIO_MODE": ["vst"], "VST_BAKE": [True]},
+     "hint": "VoiceFX(NVIDIA 降噪)要消除的對象。房間有回音就選『兩者都消』(烘進音檔時才有作用;不烘的話直接在 Premiere 的效果面板調)"},
     {"key": "VOICEFX_INTENSITY", "label": "降噪:強度", "type": "number",
      "tier": "advanced", "group": "降噪外掛(VST)",
      "min": 0, "max": 100, "step": 1, "default": 100.0,
-     "show_if": {"AUDIO_MODE": ["vst"]},
+     "show_if": {"AUDIO_MODE": ["vst"], "VST_BAKE": [True]},
      "hint": "0~100。越大清得越乾淨,但太大可能讓人聲變悶失真;不確定就留 100"},
 
     # --- 分組:冗詞與口頭禪 ---

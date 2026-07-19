@@ -220,7 +220,13 @@ def clean_audio(video_path: str, work_dir: str) -> str:
         return raw_wav
 
     if cfg.AUDIO_MODE == "vst":
-        clean_vst(raw_wav, clean_wav)
+        if getattr(cfg, "VST_BAKE", True):
+            clean_vst(raw_wav, clean_wav)
+        else:
+            # 活專案理念:降噪不烘死,交給 Premiere 掛效果隨時調
+            print("  降噪不烘進音檔(VST_BAKE=False),交給 Premiere 掛效果;"
+                  "只做響度標準化")
+            clean_wav = raw_wav
     else:
         clean_opensource(raw_wav, clean_wav)
 
