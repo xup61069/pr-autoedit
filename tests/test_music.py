@@ -8,6 +8,13 @@ from core.decision import build_segments, _split_gap
 from modules.audio_probe import audible_regions_from_array
 import config.settings as cfg
 
+# 鎖回預設參數,不受使用者 settings_local 覆寫影響(理由見 test_decision)
+cfg.SILENCE_ACTION = "speed"
+cfg.SILENCE_THRESHOLD_SEC = 1.2
+cfg.SILENCE_PADDING_SEC = 0.15
+cfg.MUSIC_DB_ABOVE_FLOOR = 12.0
+cfg.MUSIC_MIN_SEC = 0.4
+
 
 def test_music_gap_protected():
     """兩句話中間的長空隙,若有聲音(音樂)應保留而非快轉"""

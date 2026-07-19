@@ -104,13 +104,19 @@ class RemapTable:
                         max_gap_frames: int = 15) -> list[SubtitleLine]:
         """把詞級時間戳轉成字幕行。
 
-        斷行優先順序:被剪掉的詞 > 句末標點(。!?)> 明顯停頓 >
+        斷行優先順序:句末標點(。!?)> 原始說話的明顯停頓 >
         句中逗號(行已有一定長度時)> 字數上限。盡量讓每行結束在
-        自然的語氣停頓,而不是數到字數就硬斷。行尾的逗號會去掉。"""
+        自然的語氣停頓,而不是數到字數就硬斷。行尾的逗號會去掉。
+
+        停頓用「原始影片」的時間判斷,不用剪輯後的:
+        剪掉一個 0.3 秒的冗詞不該把字幕硬切成兩行(會剁得很碎),
+        但剪掉一大段靜音後,前後兩句本來就隔了很久,仍然要分行——
+        看原始停頓,兩種情況自然都對。"""
         lines: list[SubtitleLine] = []
         buf: list[str] = []
         line_start: Optional[int] = None
         line_end: Optional[int] = None
+        prev_orig_end: Optional[int] = None   # 上一個「保留」詞的原始結束幀
         idx = 1
         soft_break = max(6, max_chars // 2)   # 逗號斷行的最短行長
 
@@ -138,19 +144,18 @@ class RemapTable:
             return a.isascii() and a.isalnum() and b.isascii() and b.isalnum()
 
         for w in words:
-            ts = self.map_frame(w.start_frame(self.fps))
-            te = self.map_frame(max(w.start_frame(self.fps),
-                                    w.end_frame(self.fps) - 1))
+            ws_orig = w.start_frame(self.fps)
+            ts = self.map_frame(ws_orig)
+            te = self.map_frame(max(ws_orig, w.end_frame(self.fps) - 1))
             if ts is None or te is None:
-                # 這個詞被剪掉了,順便斷句(避免跨越剪輯點黏在一起)
-                flush()
-                continue
+                continue    # 這個詞被剪掉了:跳過即可,不強制斷行
 
-            # 換行時機(加入這個詞之前判斷):時間大跳,或已達字數上限。
+            # 換行時機(加入這個詞之前判斷):原始停頓大,或已達字數上限。
             # 但若正好在英文單字中間,先不斷,等單字結束(避免 Pat|tern)
             mid_word = bool(buf) and _mid_english_word(buf[-1], w.text)
             if line_end is not None and not mid_word and (
-                ts - line_end > max_gap_frames or
+                (prev_orig_end is not None and
+                 ws_orig - prev_orig_end > max_gap_frames) or
                 sum(len(x) for x in buf) >= max_chars
             ):
                 flush()
@@ -158,6 +163,7 @@ class RemapTable:
             if line_start is None:
                 line_start = ts
             line_end = te
+            prev_orig_end = w.end_frame(self.fps)
             buf.append(w.text)
 
             # 加入這個詞之後:遇到標點就順勢斷句,讓行尾落在自然停頓

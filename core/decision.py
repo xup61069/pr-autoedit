@@ -30,6 +30,19 @@ def _is_isolated_or_repeated(words: list[Word], i: int) -> bool:
     return False
 
 
+def _standalone_utterance(words: list[Word], i: int, gap: float = 0.1) -> bool:
+    """words[i] 是不是「獨立發出」的(前後都有停頓)。
+
+    為什麼需要:FunASR 這類逐字引擎會把「好啊」拆成「好」「啊」兩個字;
+    黏在句尾的「啊」(前面沒停頓)是句子的一部分,照樣無條件刪除
+    會把正常的話剪壞、把字幕剁碎。真正該刪的語氣詞(嗯…、呃…)
+    是前後都有停頓、單獨冒出來的一聲 —— 只刪這種。"""
+    before = words[i].start - words[i - 1].end if i > 0 else 99.0
+    after = (words[i + 1].start - words[i].end
+             if i + 1 < len(words) else 99.0)
+    return before >= gap and after >= gap
+
+
 def _split_gap(start_f: int, end_f: int,
                audible: list[tuple[int, int]]) -> list[tuple[int, int, str]]:
     """把一段沒有詞的空隙,依「有聲區間」切成小段。
@@ -115,7 +128,7 @@ def build_segments(words: list[Word], fps: float, total_frames: int,
 
         # --- 2. 判斷這個詞本身是不是冗詞 ---
         text = w.text.strip()
-        if text in cfg.FILLERS_ALWAYS:
+        if text in cfg.FILLERS_ALWAYS and _standalone_utterance(words, i):
             segments.append(Segment(ws, we, "delete", reason="filler",
                                     text=text, confidence=1.0))
         elif text in cfg.FILLERS_CONDITIONAL and _is_isolated_or_repeated(words, i):

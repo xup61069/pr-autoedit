@@ -5,6 +5,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from lxml import etree
 from core.models import Timeline, Segment
 from modules.premiere_xml import export_live_xml
+import config.settings as cfg
+
+# 鎖回預設參數,不受使用者 settings_local 覆寫影響(理由見 test_decision)
+cfg.MARKER_MAX_CONFIDENCE = 0.9
+cfg.MARKER_MIN_DURATION_MS = 200
 
 
 def _make_timeline(fps=30.0):

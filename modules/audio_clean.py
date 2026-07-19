@@ -167,12 +167,37 @@ def _video_stream_playable(path: str) -> bool:
     return r.returncode == 0 and "no packets" not in (r.stderr or "")
 
 
+def _writable_target(out_mp4: str) -> str:
+    """挑一個寫得進去的輸出檔名。
+
+    之前產的 01_clean_av.mp4 若已匯入 Premiere,Windows 會鎖住它,
+    ffmpeg 蓋不掉會直接失敗(權限被拒)。遇到這種情況自動改存
+    _2、_3… 的新檔名:舊序列繼續用舊檔,新序列用新檔,互不干擾。"""
+    base, ext = os.path.splitext(out_mp4)
+    cand = out_mp4
+    i = 2
+    while os.path.exists(cand):
+        try:
+            with open(cand, "r+b"):
+                return cand              # 檔案存在但沒被鎖 -> 直接覆蓋
+        except OSError:
+            cand = f"{base}_{i}{ext}"    # 被鎖(多半是 Premiere)-> 換名字
+            i += 1
+    return cand
+
+
 def mux_back(video_path: str, clean_wav: str, out_mp4: str) -> str:
-    """把清理後的音訊混回影片。
+    """把清理後的音訊混回影片。回傳實際寫出的檔案路徑(被 Premiere
+    鎖住時會自動改名,呼叫端要用回傳值,不要用傳入的 out_mp4)。
     這個檔案就是 Premiere XML 要引用的來源 —— 時間軸上聽到的直接是乾淨聲音。
 
     先試「無損複製」視訊串流(快、不掉畫質);少數影片複製後會壞,
     自動改用 GPU(hevc_nvenc)重新編碼,GPU 不可用再退回 CPU。"""
+    picked = _writable_target(out_mp4)
+    if picked != out_mp4:
+        print(f"  ({os.path.basename(out_mp4)} 正被 Premiere 使用中,"
+              f"改存 {os.path.basename(picked)})")
+    out_mp4 = picked
     # 路線 1:無損複製(絕大多數影片幾秒完成)
     subprocess.run([
         "ffmpeg", "-y", "-i", video_path, "-i", clean_wav,

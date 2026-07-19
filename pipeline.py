@@ -16,7 +16,7 @@
 """
 
 from __future__ import annotations
-import argparse, os, sys, subprocess
+import argparse, hashlib, json, os, sys, subprocess
 
 # Windows 中文命令列預設是 cp950 編碼,印中文或 ✓ 之類的符號會變亂碼甚至當掉。
 # 強制把訊息輸出改成 UTF-8,一次解決亂碼與當掉兩個問題。
@@ -139,9 +139,6 @@ def main():
     # --- 3. 決策引擎 ---
     print("[3/5] 決策引擎")
     segments = build_segments(words, fps, total_frames, audible=audible)
-    timeline = Timeline(fps=fps, source=os.path.abspath(clean_mp4),
-                        segments=segments)
-    timeline.to_json(os.path.join(work, "03_timeline.json"))
     n_del = sum(1 for s in segments if s.action == "delete")
     n_spd = sum(1 for s in segments if s.action == "speed")
     n_music = sum(1 for s in segments if s.reason == "music")
@@ -158,31 +155,45 @@ def main():
         audio_for_mux = gate_speed_audio(
             clean_wav, os.path.join(work, "01_clean_gated.wav"), segments, fps)
 
-    # 重算模式(--skip-audio)時,若上次混好的影片內容相同就直接沿用,
-    # 免得每按一次「重算剪輯」都要重新混音(4K 影片一次要幾十秒)。
-    # 注意:消音版的內容取決於「哪幾段被消音」,所以要把段落位置一起
-    # 算進比對,靜音門檻一改就會正確地重新混音。
-    if audio_for_mux != clean_wav:
-        gated_spans = ",".join(f"{s.start}-{s.end}"
-                               for s in segments if s.action == "speed")
-        mux_kind = f"gated:{gated_spans}"
-    else:
-        mux_kind = "plain"
-    mux_info = os.path.join(work, "01_mux_info.txt")
-    reuse_mux = False
-    if args.skip_audio and os.path.exists(clean_mp4) and os.path.exists(mux_info):
+    # 混音內容的「指紋」= 要混進去的音訊檔內容 + 哪幾段被消音。
+    # 指紋跟上次一樣就沿用上次混好的影片:
+    #   (a) 重算幾秒完成,不用每次重混(4K 一次要幾十秒);
+    #   (b) 不會去覆寫 Premiere 正在使用的檔(蓋不掉會直接失敗)。
+    def _file_md5(p: str) -> str:
+        h = hashlib.md5()
+        with open(p, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    gated = "" if audio_for_mux == clean_wav else ",".join(
+        f"{s.start}-{s.end}" for s in segments if s.action == "speed")
+    fingerprint = f"{_file_md5(audio_for_mux)}|{gated}"
+    mux_info = os.path.join(work, "01_mux_info.json")
+    actual_mp4 = None
+    if os.path.exists(mux_info):
         try:
             with open(mux_info, "r", encoding="utf-8") as f:
-                reuse_mux = f.read().strip() == mux_kind
-        except OSError:
+                info = json.load(f)
+            cand = os.path.join(work, info.get("file", ""))
+            if info.get("fingerprint") == fingerprint and os.path.exists(cand):
+                actual_mp4 = cand
+                print("  沿用上次混好的影片(內容相同,不用重混)")
+        except (ValueError, OSError):
             pass
-    if reuse_mux:
-        print("  沿用上次混好的影片(內容相同,不用重混)")
-    else:
+    if actual_mp4 is None:
         print("  混回影片...")
-        mux_back(args.video, audio_for_mux, clean_mp4)
+        # 回傳的路徑可能不同於 clean_mp4(被 Premiere 鎖住時自動改名)
+        actual_mp4 = mux_back(args.video, audio_for_mux, clean_mp4)
         with open(mux_info, "w", encoding="utf-8") as f:
-            f.write(mux_kind)
+            json.dump({"fingerprint": fingerprint,
+                       "file": os.path.basename(actual_mp4)}, f)
+    clean_mp4 = actual_mp4
+
+    # timeline 要等混音完才能定案:source 必須指向「實際寫出」的影片檔
+    timeline = Timeline(fps=fps, source=os.path.abspath(clean_mp4),
+                        segments=segments)
+    timeline.to_json(os.path.join(work, "03_timeline.json"))
 
     table = RemapTable(segments, fps)
 

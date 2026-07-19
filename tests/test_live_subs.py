@@ -5,6 +5,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.models import Timeline, Segment
 from core.remap import RemapTable
 from modules.live_subs import build_from_layout
+import config.settings as cfg
+
+# 鎖回預設參數,不受使用者 settings_local 覆寫影響(理由見 test_decision)
+cfg.SUBTITLE_MAX_CHARS = 18
+cfg.SUBTITLE_MAX_GAP_SEC = 0.5
 
 
 def _prep_workdir(fps=30.0):

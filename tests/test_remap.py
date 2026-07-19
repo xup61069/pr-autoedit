@@ -107,6 +107,28 @@ def test_subtitles_skip_deleted():
     print("  ✓ 字幕:冗詞正確剔除,保留詞正確保留")
 
 
+def test_subtitles_not_fragmented_by_small_cuts():
+    """刪掉一個短冗詞,不該把同一句字幕硬切成兩行(逐字引擎會有大量
+    小剪點,以前每個剪點都斷一刀,字幕被剁得很碎)"""
+    segs = [
+        Segment(0, 15, "keep"),
+        Segment(15, 21, "delete", reason="filler", text="啊"),
+        Segment(21, 60, "keep"),
+    ]
+    t = RemapTable(segs, fps=30)
+    words = [
+        Word("這個", 0.0, 0.5),           # keep
+        Word("啊", 0.5, 0.7),             # 被刪(0.2 秒小剪點)
+        Word("功能", 0.7, 1.2),           # keep,原始間隔僅 0.2 秒
+        Word("很好用", 1.2, 2.0),         # keep
+    ]
+    subs = t.build_subtitles(words, max_chars=18, max_gap_frames=15)
+    assert len(subs) == 1, f"應合成一行,實際 {len(subs)} 行:" + \
+        " / ".join(s.text for s in subs)
+    assert subs[0].text == "這個功能很好用"
+    print("  ✓ 字幕:小剪點不再把句子剁碎")
+
+
 def test_subtitles_keep_english_word_intact():
     """英文/數字單字不該被 max_chars 從中間切斷。
     Whisper 會把 'Pattern' 切成 'P','atter','n' 碎片,字幕不能斷在中間。"""
@@ -188,6 +210,7 @@ if __name__ == "__main__":
     test_speed_compresses()
     test_cuts_recorded()
     test_subtitles_skip_deleted()
+    test_subtitles_not_fragmented_by_small_cuts()
     test_subtitles_keep_english_word_intact()
     test_subtitles_break_at_punctuation()
     test_subtitles_strip_trailing_comma()

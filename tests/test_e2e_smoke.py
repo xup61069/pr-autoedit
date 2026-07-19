@@ -14,13 +14,22 @@ from modules.report import generate as gen_report
 from modules.premiere_xml import build_v1_timeline
 import config.settings as cfg
 
+# 鎖回預設參數,不受使用者 settings_local 覆寫影響(理由見 test_decision)
+cfg.SILENCE_ACTION = "speed"
+cfg.SILENCE_THRESHOLD_SEC = 1.2
+cfg.SILENCE_PADDING_SEC = 0.15
+cfg.SILENCE_SPEED_FACTOR = 6.0
+cfg.FILLERS_ALWAYS = ["嗯", "呃", "啊", "欸", "唉", "痾", "喔"]
+cfg.FILLERS_CONDITIONAL = ["就是", "然後", "那個", "這個", "所以說", "對對對"]
+cfg.SUBTITLE_MAX_CHARS = 18
+
 
 def fake_transcript():
     """模擬一段有冗詞、有靜音的口白"""
     return [
         Word("大家好", 0.0, 0.8),
-        Word("嗯", 0.9, 1.1),               # 必刪冗詞
-        Word("今天", 1.2, 1.7),
+        Word("嗯", 0.95, 1.1),              # 必刪冗詞(前後各停約 0.15 秒)
+        Word("今天", 1.25, 1.7),
         Word("要", 1.7, 1.9),
         Word("教", 1.9, 2.2),
         Word("Premiere", 2.2, 3.0),
