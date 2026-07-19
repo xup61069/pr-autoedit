@@ -130,6 +130,16 @@ FIELDS = [
      "tier": "advanced", "group": "冗詞與口頭禪", "min": 0, "max": 1, "step": 0.05,
      "default": 0.6,
      "hint": "0~1。越低代表程式越沒把握、越常標記出來請你確認"},
+    {"key": "RETAKE_DETECT", "label": "自動砍掉「說錯重講」的前一次", "type": "bool",
+     "tier": "advanced", "group": "冗詞與口頭禪",
+     "hint": "⚠ 預設關閉。實測在一般教學口白效益很小,而且容易把「排比句」"
+             "(左側是…右側是…)誤判成重講砍掉。要開的話,砍掉的每一處都會下 "
+             "marker,請務必看報告確認"},
+    {"key": "RETAKE_SIMILARITY", "label": "重講:要多像才算", "type": "number",
+     "tier": "advanced", "group": "冗詞與口頭禪", "min": 0.6, "max": 1.0, "step": 0.05,
+     "default": 0.8, "show_if": {"RETAKE_DETECT": [True]},
+     "hint": "0~1。調高(0.9)=只抓幾乎一字不差的重講,最保守;"
+             "調低(0.7)=抓得多但誤砍排比句的機會大增"},
     {"key": "FILLER_PAUSE_SEC", "label": "語氣詞要前後有停頓才刪", "type": "number",
      "tier": "advanced", "group": "冗詞與口頭禪", "min": 0, "max": 0.5, "step": 0.05,
      "default": 0.0, "soft": True,

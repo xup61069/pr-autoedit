@@ -147,6 +147,16 @@ def main():
     print("[3/5] 決策引擎")
     segments = build_segments(words, fps, total_frames, audible=audible)
 
+    # 重講偵測:砍掉「說錯重來」的前一次(預設關閉,見 settings 的說明)
+    if getattr(cfg, "RETAKE_DETECT", False):
+        from core.decision import find_retakes, drop_retakes
+        retakes = find_retakes(words, fps)
+        if retakes:
+            segments = drop_retakes(segments, retakes, fps)
+            secs = sum(b - a for a, b, _ in retakes) / fps
+            print(f"  重講偵測:砍掉 {len(retakes)} 處說錯重來,共 {secs:.1f} 秒"
+                  f"(信心低,全部會下 marker,請看報告確認)")
+
     if quiet:
         from core.decision import trim_quiet_inside
         before_keep = sum(s.duration for s in segments if s.action == "keep")

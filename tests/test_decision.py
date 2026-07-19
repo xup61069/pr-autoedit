@@ -3,7 +3,8 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.models import Word, Segment
-from core.decision import build_segments, trim_quiet_inside
+from core.decision import (build_segments, trim_quiet_inside,
+                          find_retakes, drop_retakes)
 import config.settings as cfg
 
 # 測試以「預設參數」為前提;使用者面板存的 settings_local 覆寫
@@ -17,6 +18,7 @@ cfg.FILLERS_CONDITIONAL = ["就是", "然後", "那個", "這個", "所以說", 
 cfg.CONDITIONAL_CONFIDENCE = 0.6
 cfg.FILLER_PAUSE_SEC = 0.0          # 預設:不要求停頓(Whisper 用)
 cfg.FILLER_ISOLATED_GAP_SEC = 0.25
+cfg.RETAKE_DETECT = False           # 預設關閉(見 settings 說明)
 
 
 def test_always_filler_deleted():
@@ -172,6 +174,73 @@ def test_micro_trim_no_quiet_is_noop():
     print("  ✓ 沒有安靜區時行為不變")
 
 
+def _retake_defaults():
+    cfg.RETAKE_DETECT = True
+    cfg.RETAKE_SIMILARITY = 0.85
+    cfg.RETAKE_MIN_CHARS = 4
+    cfg.RETAKE_MAX_CHARS = 24
+    cfg.RETAKE_BOUNDARY_GAP_SEC = 0.15
+    cfg.RETAKE_CONFIDENCE = 0.5
+
+
+def test_retake_full_repeat():
+    """整句重講:砍掉前面那次,留後面那次"""
+    _retake_defaults()
+    words = [Word("我們", 0.0, 0.3), Word("按這個鈕", 0.3, 0.9),
+            Word("我們", 1.2, 1.5), Word("按這個鈕", 1.5, 2.1)]
+    r = find_retakes(words, fps=30)
+    assert len(r) == 1, f"應抓到 1 處重講,實際 {r}"
+    assert r[0][0] == 0 and r[0][1] == round(0.9 * 30)
+    print("  ✓ 整句重講:砍掉前一次,保留重講的那次")
+
+
+def test_retake_false_start():
+    """講一半重來(前面是後面的開頭):砍掉沒講完的那次"""
+    _retake_defaults()
+    words = [Word("我們", 0.0, 0.3), Word("按這", 0.3, 0.6),
+            Word("我們", 0.9, 1.2), Word("按這個鈕開始", 1.2, 2.0)]
+    r = find_retakes(words, fps=30)
+    assert len(r) == 1 and r[0][1] == round(0.6 * 30)
+    print("  ✓ 講一半重來:砍掉沒講完的前半段")
+
+
+def test_retake_needs_pause():
+    """交界處沒停頓就不算重講(擋掉正常重複用字的誤判)"""
+    _retake_defaults()
+    words = [Word("我們", 0.0, 0.3), Word("按這個鈕", 0.3, 0.9),
+            Word("我們", 0.92, 1.2), Word("按這個鈕", 1.2, 1.8)]
+    assert find_retakes(words, fps=30) == []
+    print("  ✓ 沒有停頓的重複不被當成重講")
+
+
+def test_retake_off_by_default():
+    """關掉時完全不動作"""
+    _retake_defaults()
+    cfg.RETAKE_DETECT = False
+    words = [Word("我們", 0.0, 0.3), Word("按這個鈕", 0.3, 0.9),
+            Word("我們", 1.2, 1.5), Word("按這個鈕", 1.5, 2.1)]
+    assert find_retakes(words, fps=30) == []
+    cfg.RETAKE_DETECT = False          # 維持預設關閉
+    print("  ✓ RETAKE_DETECT=False 時不動作")
+
+
+def test_drop_retakes_keeps_coverage():
+    """砍掉重講後,段落仍要首尾相連、完整覆蓋"""
+    _retake_defaults()
+    segs = [Segment(0, 300, "keep")]
+    out = drop_retakes(segs, [(50, 120, "我們按這個鈕")], fps=30)
+    assert out[0].start == 0 and out[-1].end == 300
+    for a, b in zip(out, out[1:]):
+        assert a.end == b.start
+    cut = [s for s in out if s.action == "delete"]
+    assert len(cut) == 1 and cut[0].reason == "retake"
+    assert cut[0].text == "我們按這個鈕"
+    assert cut[0].confidence < cfg.MARKER_MAX_CONFIDENCE, \
+        "重講刪除的信心必須低於 marker 門檻,才會下 marker 供人確認"
+    cfg.RETAKE_DETECT = False
+    print("  ✓ 砍重講後覆蓋完整,且會下 marker 供確認")
+
+
 if __name__ == "__main__":
     print("執行決策引擎測試...")
     test_always_filler_deleted()
@@ -185,4 +254,9 @@ if __name__ == "__main__":
     test_micro_trim_never_touches_music()
     test_micro_trim_keeps_coverage()
     test_micro_trim_no_quiet_is_noop()
+    test_retake_full_repeat()
+    test_retake_false_start()
+    test_retake_needs_pause()
+    test_retake_off_by_default()
+    test_drop_retakes_keeps_coverage()
     print("\n全部通過 ✓  決策引擎邏輯正確。")

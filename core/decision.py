@@ -157,6 +157,44 @@ def build_segments(words: list[Word], fps: float, total_frames: int,
     return _merge_adjacent(segments)
 
 
+def _cut_spans(segments: list[Segment],
+            spans: list[tuple[int, int, str]],
+            reason: str, confidence: float) -> list[Segment]:
+    """把一批「原始幀區間」從保留段裡挖掉,改成刪除段。
+
+    共用給能量微剪(挖安靜)與重講偵測(挖說錯的那次)使用。
+    只動 action="keep" 的段;音樂/音效段(reason="music")絕不碰。
+    spans 需已排序、彼此不重疊。輸出仍然首尾相連、覆蓋範圍不變。"""
+    if not spans:
+        return segments
+
+    out: list[Segment] = []
+    for s in segments:
+        if s.action != "keep" or s.reason == "music":
+            out.append(s)
+            continue
+        cursor = s.start
+        for a, b, text in spans:
+            if b <= cursor:
+                continue
+            if a >= s.end:
+                break
+            a, b = max(a, cursor), min(b, s.end)
+            if b <= a:
+                continue
+            if a > cursor:
+                out.append(Segment(cursor, a, "keep", reason=s.reason,
+                                text=s.text, confidence=s.confidence))
+            out.append(Segment(a, b, "delete", reason=reason,
+                            text=text, confidence=confidence))
+            cursor = b
+        if cursor < s.end:
+            out.append(Segment(cursor, s.end, "keep", reason=s.reason,
+                            text=s.text, confidence=s.confidence))
+
+    return _merge_adjacent(out)
+
+
 def trim_quiet_inside(segments: list[Segment],
                     quiet: list[tuple[int, int]],
                     fps: float) -> list[Segment]:
@@ -174,35 +212,110 @@ def trim_quiet_inside(segments: list[Segment],
       - quiet 需已排序、彼此不重疊(audio_probe 的輸出天然如此)。
 
     不改變總覆蓋範圍:切出來的段落仍然首尾相連、覆蓋原本那一段。"""
-    if not quiet:
-        return segments
+    # 信心 0.95 = 跟一般靜音同級,高於 marker 門檻,不會洗版 marker
+    return _cut_spans(segments, [(a, b, "") for a, b in quiet],
+                    reason="silence", confidence=0.95)
 
-    out: list[Segment] = []
-    for s in segments:
-        if s.action != "keep" or s.reason == "music":
-            out.append(s)
+
+# ---------------------------------------------------------------------------
+# 重講偵測(說錯重來 -> 砍掉前一次)
+# ---------------------------------------------------------------------------
+# 錄教學片最常見的浪費:一句話講到一半發現講錯,停一下,重講一次。
+# 前面那次是廢的,但它有完整的語音、也有詞,前面所有機制都刪不掉它。
+#
+# 判斷方式:把口白依「停頓」切成一句一句,拿相鄰的兩句比對文字相似度。
+# 兩種情況算重講:
+#   1. 整句幾乎一樣    ——「我們按這個鈕」/「我們按這個鈕」
+#   2. 前一句是後一句的開頭 ——「我們按這」/「我們按這個鈕開始執行」(講一半重來)
+# 命中就把「前面那次」標成刪除。留後面那次,因為重講通常才是講對的版本。
+#
+# 這是唯一會刪掉「真正說話內容」的機制,誤判成本比刪靜音高很多,
+# 所以信心值刻意壓低 -> 一定會下 marker,請在報告/Premiere 裡逐一確認。
+
+_PUNCT = "。,,、;;::!!??…-—~~「」『』()()\"' 　"
+
+
+def _norm_text(s: str) -> str:
+    """比對用的正規化:去標點空白、英文轉小寫"""
+    return "".join(c for c in s.lower() if c not in _PUNCT)
+
+
+def find_retakes(words: list[Word], fps: float) -> list[tuple[int, int, str]]:
+    """找出「說錯重講」裡該砍掉的前一次嘗試。
+
+    做法:不依賴斷句(辨識引擎會把詞排得很密,靠停頓根本切不出句子)。
+    改成沿著逐字稿滑動,在每個「詞的交界」把前面 N 個字跟後面 N 個字對比,
+    夠像就代表這裡發生了「講一次 -> 重講一次」,砍掉前面那次。
+    等長比對同時涵蓋兩種情況:
+      整句重講 —— 前「我們按這個鈕」/ 後「我們按這個鈕」
+      講一半重來 —— 前「我們按這」  / 後「我們按這個鈕開始」(前 4 字一樣)
+
+    回傳 [(起始幀, 結束幀, 被砍掉的那段話), ...],已排序、不重疊。"""
+    if not words or not getattr(cfg, "RETAKE_DETECT", False):
+        return []
+
+    from difflib import SequenceMatcher
+
+    sim_need = float(getattr(cfg, "RETAKE_SIMILARITY", 0.8))
+    min_chars = int(getattr(cfg, "RETAKE_MIN_CHARS", 4))
+    max_chars = int(getattr(cfg, "RETAKE_MAX_CHARS", 24))
+    need_gap = float(getattr(cfg, "RETAKE_BOUNDARY_GAP_SEC", 0.15))
+
+    # 攤平成一串字,並記住每個字屬於哪個詞(標點不參與比對)
+    chars: list[str] = []
+    owner: list[int] = []
+    for wi, w in enumerate(words):
+        for c in _norm_text(w.text):
+            chars.append(c)
+            owner.append(wi)
+    text = "".join(chars)
+    if len(text) < min_chars * 2:
+        return []
+
+    # 每個詞的第一個字在這串字裡的位置 = 可以當「重講交界」的候選點
+    first_char_of: dict[int, int] = {}
+    for pos, wi in enumerate(owner):
+        first_char_of.setdefault(wi, pos)
+
+    out: list[tuple[int, int, str]] = []
+    cut_until = 0            # 已經被砍掉的字位置,避免重疊
+    for wi in range(1, len(words)):
+        p = first_char_of.get(wi)
+        if p is None or p <= cut_until:
             continue
-        cursor = s.start
-        for a, b in quiet:
-            if b <= cursor:
-                continue
-            if a >= s.end:
+        # 真正的重講,講者多半會停頓一下再重來。要求交界處有個小停頓,
+        # 可以擋掉大量「正常重複用字」的誤判。設 0 就是不要求。
+        if need_gap > 0 and words[wi].start - words[wi - 1].end < need_gap:
+            continue
+        # 由長到短試:優先砍掉最長的那段重複
+        best = None
+        for w_len in range(min(max_chars, p - cut_until, len(text) - p),
+                        min_chars - 1, -1):
+            a = text[p - w_len:p]
+            b = text[p:p + w_len]
+            if SequenceMatcher(None, a, b).ratio() >= sim_need:
+                best = w_len
                 break
-            a, b = max(a, cursor), min(b, s.end)
-            if b <= a:
-                continue
-            if a > cursor:
-                out.append(Segment(cursor, a, "keep", reason=s.reason,
-                                text=s.text, confidence=s.confidence))
-            # 信心 0.95 = 跟一般靜音同級,高於 marker 門檻,不會洗版 marker
-            out.append(Segment(a, b, "delete", reason="silence",
-                            confidence=0.95))
-            cursor = b
-        if cursor < s.end:
-            out.append(Segment(cursor, s.end, "keep", reason=s.reason,
-                            text=s.text, confidence=s.confidence))
+        if not best:
+            continue
+        start_char = p - best
+        s = words[owner[start_char]].start_frame(fps)
+        e = words[owner[p - 1]].end_frame(fps)
+        if e > s:
+            out.append((s, e, text[start_char:p]))
+            cut_until = p
+    return out
 
-    return _merge_adjacent(out)
+
+def drop_retakes(segments: list[Segment],
+                retakes: list[tuple[int, int, str]],
+                fps: float) -> list[Segment]:
+    """把偵測到的「說錯的那一次」從保留段裡挖掉。
+
+    信心用 cfg.RETAKE_CONFIDENCE(預設 0.5,低於 marker 門檻)
+    -> 每一刀都會下 marker,方便你在 Premiere 逐一確認有沒有砍錯。"""
+    return _cut_spans(segments, retakes, reason="retake",
+                    confidence=float(getattr(cfg, "RETAKE_CONFIDENCE", 0.5)))
 
 
 def _merge_adjacent(segments: list[Segment]) -> list[Segment]:

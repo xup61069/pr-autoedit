@@ -36,21 +36,24 @@ _LABELS = {
     "silence": "Rose",       # 靜音:粉紅(候選:刪除或快轉)
     "music": "Caribbean",    # 音樂/音效:青綠(受保護,別剪)
     "filler": "Violet",      # 冗詞:紫(候選:刪除)
+    "retake": "Mango",       # 說錯重講的前一次:橘(候選:刪除,務必先確認)
 }
 
 _CLIP_NAMES = {
-    "silence": "靜音", "music": "音樂", "filler": "冗詞",
+    "silence": "靜音", "music": "音樂", "filler": "冗詞", "retake": "重講",
 }
 
 
 def _segment_kind(s) -> str:
-    """把決策段落歸類成四種:speech / silence / music / filler"""
+    """把決策段落歸類成五種:speech / silence / music / filler / retake"""
     if s.reason == "music":
         return "music"
     if s.reason == "silence":
         return "silence"
     if s.reason == "filler":
         return "filler"
+    if s.reason == "retake":
+        return "retake"
     return "speech"
 
 
@@ -204,6 +207,9 @@ def export_live_xml(timeline: Timeline, out_xml: str,
         if kind == "music":
             name, comment = "[音樂] 確認這段是不是要保留的音樂/音效", \
                 f"長度 {s.duration / fps:.1f} 秒"
+        elif kind == "retake":
+            name, comment = f"[重講] {s.text}", \
+                f"疑似說錯重來的前一次,信心 {s.confidence:.2f},請確認再刪"
         elif kind == "filler" and s.confidence < cfg.MARKER_MAX_CONFIDENCE \
                 and s.duration / fps * 1000 >= cfg.MARKER_MIN_DURATION_MS:
             name, comment = f"[冗詞] {s.text}", \
