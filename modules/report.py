@@ -34,24 +34,35 @@ def generate(timeline: Timeline, words: list[Word],
                 parts.append(t)
         return "".join(parts)
 
+    def tc(frame: int) -> str:
+        """幀 -> 分:秒(給人看的時間碼)"""
+        s = max(0, frame) / fps
+        return f"{int(s // 60):02d}:{int(s % 60):02d}"
+
     rows = []
     for c in cuts:
         color = "#c0392b" if c.confidence < cfg.MARKER_MAX_CONFIDENCE else "#7f8c8d"
         badge = "需審閱" if c.confidence < cfg.MARKER_MAX_CONFIDENCE else "自動"
         rows.append(f"""
         <tr>
+          <td class="tc">{tc(c.timeline_frame)}</td>
           <td>{c.reason}</td>
           <td style="color:{color};font-weight:500">{badge}</td>
           <td>{html.escape(c.text)}</td>
           <td>{c.duration_ms} ms</td>
           <td>{c.confidence:.2f}</td>
           <td class="ctx">…{context_around(c.orig_frame)}…</td>
-          <td>{c.timeline_frame}</td>
         </tr>""")
 
-    total_deleted_ms = sum(c.duration_ms for c in cuts
-                        if timeline.segments)  # 概略
     n_review = sum(1 for c in cuts if c.confidence < cfg.MARKER_MAX_CONFIDENCE)
+
+    # 省時摘要:原始長度 vs 剪輯後長度
+    orig_frames = max((s.end for s in timeline.segments), default=0)
+    edited_frames = table.total_frames
+    saved_frames = max(0, orig_frames - edited_frames)
+    saved_pct = (saved_frames / orig_frames * 100) if orig_frames else 0
+    n_del = sum(1 for s in timeline.segments if s.action == "delete")
+    n_spd = sum(1 for s in timeline.segments if s.action == "speed")
 
     doc = f"""<!DOCTYPE html>
 <html lang="zh-Hant"><head><meta charset="utf-8">
@@ -66,17 +77,29 @@ def generate(timeline: Timeline, words: list[Word],
   th, td {{ text-align: left; padding: 8px 10px; border-bottom: 1px solid #ddd; }}
   th {{ background: #f7f6f2; font-weight: 500; }}
   .ctx {{ color: #555; }}
+  .tc {{ font-variant-numeric: tabular-nums; color: #2d6cdf; font-weight: 500; }}
   mark {{ background: #ffe08a; padding: 0 2px; }}
+  .stats {{ display: flex; gap: 1.5rem; flex-wrap: wrap; margin: 0.5rem 0 1rem; }}
+  .stat {{ background: #f1efe8; padding: 0.7rem 1.1rem; border-radius: 8px; }}
+  .stat .num {{ font-size: 1.4rem; font-weight: 600; }}
+  .stat .lbl {{ font-size: 12px; color: #666; }}
+  .stat.hi .num {{ color: #2e8b57; }}
 </style></head><body>
 <h1>剪輯審閱報告</h1>
+<div class="stats">
+  <div class="stat hi"><div class="num">{tc(saved_frames)}</div><div class="lbl">省下的時間({saved_pct:.0f}%)</div></div>
+  <div class="stat"><div class="num">{tc(orig_frames)} → {tc(edited_frames)}</div><div class="lbl">原長 → 剪後</div></div>
+  <div class="stat"><div class="num">{n_del} / {n_spd}</div><div class="lbl">刪除段 / 快轉段</div></div>
+  <div class="stat"><div class="num">{n_review}</div><div class="lbl">需人工審閱的切點</div></div>
+</div>
 <div class="summary">
-  共 {len(cuts)} 個切點,其中 <b>{n_review}</b> 個標為「需審閱」(低信心,已在 PR 下 marker)。<br>
-  在 Premiere 用 Shift+M / Ctrl+Shift+M 逐點跳,只需確認「需審閱」的切點。<br>
-  若這裡看到大量誤判,先調 config/settings.py 的門檻再重跑,不要進 PR。
+  下方 {len(cuts)} 個切點中,<b>{n_review}</b> 個標為「需審閱」(低信心,已在專案下 marker)。<br>
+  在 Premiere 用 Shift+M / Ctrl+Shift+M 逐點跳,只需確認「需審閱」的切點;「時間」欄是剪輯後影片的位置。<br>
+  若這裡看到大量誤判,先調 config/settings.py 的門檻再重跑,不用急著進 Premiere。
 </div>
 <table>
-  <tr><th>類型</th><th>狀態</th><th>詞</th><th>長度</th><th>信心</th>
-      <th>前後文</th><th>時間軸幀</th></tr>
+  <tr><th>時間</th><th>類型</th><th>狀態</th><th>詞</th><th>長度</th><th>信心</th>
+      <th>前後文</th></tr>
   {''.join(rows)}
 </table>
 </body></html>"""
