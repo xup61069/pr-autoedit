@@ -39,11 +39,14 @@
 ```
 
 **兩種交付方式(config.DELIVERY_MODE)**:
-- `live`(預設,活專案):`premiere_xml.export_live_xml` 自製 FCP7 XML,所有段落
+- `baked`(預設,直接剪好):auto-editor 產 XML,決策直接烘進去(cut/timeremap)。
+  「隨時可調」靠面板的「重算剪輯」鈕:pipeline --skip-audio 幾秒重算、匯入新序列。
+- `live`(備選,活專案):`premiere_xml.export_live_xml` 自製 FCP7 XML,所有段落
   切開但全保留(start==in、end==out),用標籤色分類(靜音=Rose、音樂=Caribbean、
   冗詞=Violet)。決策只是「建議」,使用者在 Premiere 裡批次處理、隨時反悔。
   剪完後可用 `modules/live_subs.py` 依序列實際版面重新對位字幕(P5)。
-- `baked`(舊模式):auto-editor 產 XML,決策直接烘進去(cut/timeremap)。
+  ⚠️ 實測:大量小片段+標籤在 Premiere 是效能地雷(長片會卡),所以不是預設;
+  設計新功能時要控制 clip 數量。
 
 ⚠️ **混音刻意排在決策之後**:baked 模式要先知道哪些是「靜音快轉段」,才能在混回
 影片前把那幾段的聲音抹成無聲(config.MUTE_SPEED_AUDIO),避免 Premiere 快轉播放
@@ -69,7 +72,9 @@
 
 3. **只轉錄一次。**
    Whisper 轉錄是最慢的一步(GPU 佔用大)。轉錄結果存成 `02_transcript.json` 快取,
-   之後調門檻重跑只重算決策,不重轉。任何改動都不要破壞這個快取機制。
+   之後調門檻重跑只重算決策,不重轉。快取帶有「辨識設定指紋」(引擎/模型/語言/
+   詞庫),設定變了會自動重轉——不要退回「只認檔案存在」的舊行為(曾造成
+   「切了引擎但字幕沒變」的 bug)。任何改動都不要破壞這個快取機制。
 
 ## 信心分級機制
 
@@ -109,7 +114,7 @@ python -m tests.test_e2e_smoke  # 動了任何東西,跑這個確認主幹沒斷
 
 | 使用者想要 | 改哪裡 |
 |-----------|--------|
-| 辨識不準/術語錯 | `config/settings.py` 的 CUSTOM_VOCAB(當提示詞/熱詞);改完要刪 02_transcript.json 才會重轉 |
+| 辨識不準/術語錯 | `config/settings.py` 的 VOCAB_CATEGORIES / CUSTOM_VOCAB(當提示詞/熱詞);改完直接重跑即可,快取偵測到辨識設定變更會自動重轉 |
 | 換辨識引擎 | `config/settings.py` 的 ASR_ENGINE;新引擎在 `transcribe.py` 補 `_transcribe_xxx()` |
 | 冗詞判太多/太少 | `config/settings.py` 的 FILLERS_*,或 `decision.py` 的 `_is_isolated_or_repeated` |
 | 靜音切太碎/太鬆 | `config/settings.py` 的 SILENCE_THRESHOLD_SEC |
@@ -123,8 +128,10 @@ python -m tests.test_e2e_smoke  # 動了任何東西,跑這個確認主幹沒斷
 
 ## 已有雛形 / 尚未實作
 
-- **Premiere CEP 面板**:已有 MVP 在 `premiere-panel/`(選影片→跑 pipeline→匯入)。
-  Phase 2 待做:自動抓目前選取素材路徑、進度條、面板內調參數。面板刻意做薄,
+- **Premiere CEP 面板**:已成熟,在 `premiere-panel/`。功能:選影片→跑 pipeline→
+  匯入;設定表單(由 `ui_settings.py` dump 自動生成,加欄位面板自動長出);
+  剪輯後工具(開報告 / 重算剪輯匯入新序列 / QE 掛降噪 / 依序列版面產字幕)。
+  待做:自動抓目前選取素材路徑、進度條。面板刻意做薄,
   真正邏輯全在 Python,日後要換 UXP 影響面小。
 - **FunASR 引擎**:已實作為可選(`transcribe.py`)。對中英夾雜內容不如 Whisper,
   故非預設;純中文內容可切換。
