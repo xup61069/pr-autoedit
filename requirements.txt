@@ -2,6 +2,7 @@
 faster-whisper>=1.0.0
 lxml>=5.0.0
 auto-editor>=24.0.0
+numpy>=1.24.0        # 音樂/音效偵測(modules/audio_probe.py)用
 
 # 語音辨識 - 替代引擎(選用):FunASR / Paraformer,中文常更準
 # 要用時把 config.ASR_ENGINE 設為 "funasr";首次執行會自動下載模型(約 2GB)

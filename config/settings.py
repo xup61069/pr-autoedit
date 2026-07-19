@@ -94,10 +94,13 @@ MARKER_MAX_CONFIDENCE = 0.9
 # ============================================================
 
 # 使用哪個辨識引擎:
-#   "faster-whisper" = 目前實作(Whisper,泛用、支援多語)
-#   "funasr"         = 預留:阿里 FunASR / Paraformer,中文通常更準(尚未實作)
+#   "faster-whisper" = 預設(Whisper,泛用、支援多語,中英夾雜表現較好)
+#   "funasr"         = 備選:阿里 FunASR / Paraformer(純中文可試;
+#                      中英夾雜實測不如 Whisper,且逐字輸出、沒有標點)
 # 要接新引擎,只需在 modules/transcribe.py 加一個對應的函式,
 # 輸出一樣的 list[Word] 即可,其餘管線完全不用動。
+# 切換引擎/模型/詞庫後不用手動刪快取:轉錄快取會記住當時的辨識設定,
+# 偵測到變更就自動重新轉錄。
 ASR_ENGINE = "faster-whisper"
 
 # --- FunASR 專用參數(ASR_ENGINE="funasr" 時生效)---

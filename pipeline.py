@@ -8,7 +8,7 @@
 
 產物(全部在 output/ 底下,以影片檔名分資料夾):
     01_clean_av.mp4      音訊清理後、混回影片
-    02_transcript.json   詞級轉錄(快取,改參數重跑時免重轉)
+    02_transcript.json   詞級轉錄(快取;調剪輯參數免重轉,改辨識設定會自動重轉)
     03_timeline.json     決策引擎輸出的段落清單
     04_project.xml       帶 marker 的 Premiere 專案(匯入這個)
     04_subtitles.srt     重映射後的繁體字幕(拖進字幕軌)
@@ -144,7 +144,7 @@ def main():
     n_music = sum(1 for s in segments if s.reason == "music")
     print(f"  {len(segments)} 段:刪除 {n_del}、快轉 {n_spd}、音樂保護 {n_music}")
 
-    live = getattr(cfg, "DELIVERY_MODE", "live") == "live"
+    live = getattr(cfg, "DELIVERY_MODE", "baked") == "live"
 
     # --- 3.5 混回影片:視需要先把快轉段的聲音抹成無聲,再混音 ---
     from modules.audio_clean import gate_speed_audio, mux_back

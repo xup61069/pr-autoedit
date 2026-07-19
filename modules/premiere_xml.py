@@ -1,14 +1,12 @@
 """
-Premiere 專案匯出 —— 審閱模式的核心產物。
+Premiere 專案匯出 —— 兩種交付方式(config.DELIVERY_MODE)各走一條路:
 
-策略:不自己從零寫 FCP7 XML(格式老又雷),
-先用 auto-editor 產生基本 timeline XML,再用 lxml 後處理插入 marker。
+  "baked"(預設,直接剪好):用 auto-editor 產生已剪好的 timeline XML,
+      再用 lxml 後處理插入審閱 marker、停用快轉段音訊(避免加速尖聲)。
+  "live"(活專案):export_live_xml() 自製 FCP7 XML,所有段落切開但全保留,
+      用顏色標籤分類,進 Premiere 再批次決定怎麼處理。不依賴 auto-editor。
 
-依賴:pip install auto-editor lxml
-
-若你不想裝 auto-editor,本檔也提供一個 build_v1_timeline() 產生
-auto-editor 的 v1 timeline JSON,你在命令列跑:
-    auto-editor timeline.v1.json --export premiere -o project.xml
+依賴:pip install auto-editor lxml(live 模式只需要 lxml)
 """
 
 from __future__ import annotations

@@ -2,8 +2,9 @@
 語音轉錄模組 —— 把音訊轉成「詞級時間戳」,這是整個系統的唯一真相來源。
 
 支援可切換的辨識引擎(見 config.ASR_ENGINE):
-  "faster-whisper" —— 目前實作(Whisper,泛用、多語)
-  "funasr"         —— 預留:阿里 FunASR / Paraformer(中文通常更準,尚未實作)
+  "faster-whisper" —— 預設(Whisper,泛用、多語,中英夾雜表現較好)
+  "funasr"         —— 備選:阿里 FunASR / Paraformer(純中文可試;
+                      中英夾雜實測不如 Whisper,且逐字輸出無標點)
 
 不論用哪個引擎,對外都回傳一樣的 list[Word](text/start/end,秒),
 所以之後要換引擎,其餘管線完全不用改。
@@ -60,7 +61,7 @@ def transcribe(audio_path: str, cache_json: str | None = None) -> list[Word]:
         words = _transcribe_funasr(audio_path)
     else:
         raise ValueError(f"未知的 ASR_ENGINE:{engine!r}("
-                         "目前支援 'faster-whisper';'funasr' 尚未實作)")
+                         "目前支援 'faster-whisper' 與 'funasr')")
 
     print(f"  轉錄完成:{len(words)} 個詞")
     if cache_json:

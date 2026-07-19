@@ -1,15 +1,18 @@
 """
-音訊清理模組 —— 兩條路都實作,用 config.AUDIO_MODE 切換。
+音訊清理模組 —— 三條路,用 config.AUDIO_MODE 切換:
 
-路線 A "vst"        : 用 pedalboard 載入你現有的 VST3 鏈(你在 PR 調好的參數)
-路線 B "opensource" : DeepFilterNet 降噪 + ffmpeg loudnorm 響度標準化
+  "vst"        : pedalboard 載入你的 VST3 鏈。預設 VST_BAKE=False——
+                 降噪「不」烘進音檔(只做響度標準化),交給 Premiere
+                 掛效果隨時可調;VST_BAKE=True 才離線處理進音檔(舊做法)。
+  "opensource" : DeepFilterNet 降噪 + ffmpeg loudnorm 響度標準化
+  "none"       : 完全不處理,直接用原始音訊(測流程最快)
 
 依賴:
   pip install pedalboard soundfile        (VST 路線)
   pip install deepfilternet torch soundfile  (開源路線)
   另外需要系統安裝 ffmpeg 並加入 PATH
 
-輸出:清理後的 WAV,以及「混回影片」的 mp4(視訊不重編碼,幾秒完成)。
+輸出:清理後的 WAV;混回影片(mux_back)由 pipeline 在決策後呼叫。
 """
 
 from __future__ import annotations
