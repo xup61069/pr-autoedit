@@ -429,9 +429,14 @@
       var outDir = path.join(PROJECT_DIR, "output", name);
       var xml = toFwd(path.join(outDir, "04_project.xml"));
       var srt = toFwd(path.join(outDir, "04_subtitles.srt"));
-      cs.evalScript('prImportEditedProject("' + xml + '","' + srt + '")', function (r) {
-        if (r && r.indexOf("OK") === 0) setStatus("完成 ✓ 已匯入序列與字幕;下方「剪輯後工具」可開報告、調整重算", "ok");
-        else setStatus("Python 跑完了,但匯入時出錯:" + r, "err");
+      // "1" = 覆蓋模式:重跑同一支影片時,把上次那條同名序列換掉,不愈堆愈多
+      cs.evalScript('prImportEditedProject("' + xml + '","' + srt + '","1")', function (r) {
+        if (r && r.indexOf("OK") === 0) {
+          var n = parseInt(r.split(" ")[1], 10) || 0;
+          setStatus("完成 ✓ 已匯入序列與字幕" +
+            (n ? "(已換掉上次的舊序列)" : "") +
+            ";下方「剪輯後工具」可開報告、調整重算", "ok");
+        } else setStatus("Python 跑完了,但匯入時出錯:" + r, "err");
         $("run").disabled = false;
         rememberVideo(selectedVideo);
       });
@@ -524,7 +529,9 @@
         var outDir = outDirOf(lastVideo);
         var xml = toFwd(path.join(outDir, "04_project.xml"));
         var srt = toFwd(path.join(outDir, "04_subtitles.srt"));
-        cs.evalScript('prImportEditedProject("' + xml + '","' + srt + '")',
+        // 重算鈕刻意「不」覆蓋(第三個參數 "0"):留著舊序列可以兩條互相比較、
+        // 覺得新的剪太兇隨時回去用舊的。要乾淨就手動刪掉不要的那條。
+        cs.evalScript('prImportEditedProject("' + xml + '","' + srt + '","0")',
           function (r) {
             if (r && r.indexOf("OK") === 0) {
               afterSay("已匯入新序列 ✓(舊序列還在,不喜歡新的就刪掉它)", true);

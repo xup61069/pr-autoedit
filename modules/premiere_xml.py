@@ -55,12 +55,16 @@ def _segment_kind(s) -> str:
 
 
 def export_live_xml(timeline: Timeline, out_xml: str,
-                    width: int, height: int) -> str:
+                    width: int, height: int,
+                    seq_name: str | None = None) -> str:
     """產生「活專案」XML:全部保留、依段落種類切開並上色。
 
     timeline.segments 的 action(delete/speed)在這個模式下「不執行」,
     只轉譯成標籤顏色與 clip 名稱;真正要不要刪、要不要快轉,
-    留到 Premiere 裡(手動批次、或之後的面板套用鈕)再決定。"""
+    留到 Premiere 裡(手動批次、或之後的面板套用鈕)再決定。
+
+    seq_name:序列名稱。要帶上影片名(每支片各自獨立),面板才能
+    在重跑時只覆蓋「同一支影片的舊序列」,不會誤刪別支片的。"""
     from lxml import etree
 
     fps = timeline.fps
@@ -78,7 +82,7 @@ def export_live_xml(timeline: Timeline, out_xml: str,
 
     root = etree.Element("xmeml", version="5")
     seq = etree.SubElement(root, "sequence", explodedTracks="true")
-    etree.SubElement(seq, "name").text = f"{stem} 活專案"
+    etree.SubElement(seq, "name").text = seq_name or f"{stem} 活專案"
     etree.SubElement(seq, "duration").text = str(total)
     rate_el(seq)
     media = etree.SubElement(seq, "media")
@@ -262,11 +266,17 @@ def export_premiere_xml(v1_json: str, out_xml: str) -> str:
     return out_xml
 
 
-def insert_markers(xml_path: str, table: RemapTable, out_xml: str) -> str:
+def insert_markers(xml_path: str, table: RemapTable, out_xml: str,
+                sequence_name: str | None = None) -> str:
     """
     在 Premiere XML 的每個切點插入 marker。
     只插入「需要人工審閱」的切點(低信心、夠長),
     高信心的必刪冗詞不插,免得 marker 太多。
+
+    sequence_name:順便改掉序列名稱。auto-editor 一律叫
+    "Auto-Editor Media Group",每支影片都同名,在 Premiere 專案裡
+    分不出誰是誰、面板也無從判斷該覆蓋哪一條;改成帶影片名的名稱後,
+    重跑同一支片才能安全地覆蓋掉自己的舊序列。
     """
     from lxml import etree
 
@@ -275,6 +285,12 @@ def insert_markers(xml_path: str, table: RemapTable, out_xml: str) -> str:
     seq = root.find(".//sequence")
     if seq is None:
         raise RuntimeError("XML 裡找不到 <sequence>,auto-editor 輸出格式可能改了")
+
+    if sequence_name:
+        name_el = seq.find("name")
+        if name_el is None:
+            name_el = etree.SubElement(seq, "name")
+        name_el.text = sequence_name
 
     cuts = table.cuts_for_markers(
         min_duration_ms=cfg.MARKER_MIN_DURATION_MS,

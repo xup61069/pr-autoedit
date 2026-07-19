@@ -204,11 +204,14 @@ def main():
     from core.models import Segment
 
     final_xml = os.path.join(work, "04_project.xml")
+    # 序列名稱帶上影片名:在 Premiere 專案裡一眼看得出是哪支片,
+    # 面板重跑時也才能只覆蓋「這支片的」舊序列
+    seq_name = f"{name} 活專案" if live else f"{name} 自動剪輯"
     if live:
         # 活專案:全保留 + 標籤,自製 XML,不需要 auto-editor
         from modules.premiere_xml import export_live_xml
         w, h = get_dimensions(args.video)
-        export_live_xml(timeline, final_xml, w, h)
+        export_live_xml(timeline, final_xml, w, h, seq_name=seq_name)
         # 時間軸=原片,字幕不需要重映射(用「全保留」恆等映射)
         sub_table = RemapTable([Segment(0, total_frames, "keep")], fps)
     else:
@@ -219,7 +222,7 @@ def main():
         try:
             raw_xml = export_premiere_xml(
                 v1, os.path.join(work, "04_project_raw.xml"))
-            insert_markers(raw_xml, table, final_xml)
+            insert_markers(raw_xml, table, final_xml, sequence_name=seq_name)
             # 快轉段消音:把帶變速濾鏡的音訊片段停用(最可靠)
             if cfg.MUTE_SPEED_AUDIO and any(s.action == "speed" for s in segments):
                 mute_speed_audio_in_xml(final_xml, final_xml)

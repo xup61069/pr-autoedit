@@ -3,7 +3,37 @@
  * 面板跑完 Python 後,呼叫這裡把剪好的專案(FCP7 XML)與字幕匯入目前專案。
  */
 
-function prImportEditedProject(xmlPath, srtPath) {
+/*
+ * 刪掉一條序列。Premiere 各版本的 API 不太一致,兩種做法都試:
+ * 官方的 deleteSequence,不行就用序列的 projectItem 刪。刪不掉也不算致命,
+ * 頂多是舊序列還留著,所以全部包 try/catch、回傳成功與否。
+ */
+function prDeleteSequence(seq) {
+    try {
+        if (app.project.deleteSequence) {
+            app.project.deleteSequence(seq);
+            return true;
+        }
+    } catch (e1) { }
+    try {
+        if (seq.projectItem && seq.projectItem.deleteBin) {
+            seq.projectItem.deleteBin();
+            return true;
+        }
+    } catch (e2) { }
+    return false;
+}
+
+/*
+ * 匯入剪好的專案(FCP7 XML)與字幕。
+ *
+ * replace="1":覆蓋模式。匯入後,把「同名的舊序列」刪掉,只留最新這條
+ * ——重跑同一支影片不會愈堆愈多。序列名稱由 pipeline 產生、帶影片名
+ * (例:「我的教學 自動剪輯」),所以只會刪到這支片自己的舊序列,
+ * 別支影片的序列絕對不會被動到。
+ * replace 不是 "1" 時維持舊行為:新序列照加、舊的留著(可以互相比較、反悔)。
+ */
+function prImportEditedProject(xmlPath, srtPath, replace) {
     try {
         if (typeof app === "undefined" || !app.project) {
             return "ERROR: 沒有開啟中的 Premiere 專案,請先新建或開啟一個專案";
@@ -15,9 +45,39 @@ function prImportEditedProject(xmlPath, srtPath) {
             return "ERROR: 找不到剪輯專案檔:" + xmlPath;
         }
 
+        // 匯入前先記下現有序列,才分得出哪條是這次新產生的
+        var before = {};
+        var i;
+        for (i = 0; i < proj.sequences.numSequences; i++) {
+            before[proj.sequences[i].sequenceID] = true;
+        }
+
         // 匯入 FCP7 XML(會建立一個剪好的序列)
         // importFiles(paths, suppressUI, targetBin, importAsNumberedStills)
         proj.importFiles([xmlPath], true, proj.rootItem, false);
+
+        // 找出新序列,並收集「同名的舊序列」當作待刪清單
+        var fresh = null, stale = [];
+        for (i = 0; i < proj.sequences.numSequences; i++) {
+            if (!before[proj.sequences[i].sequenceID]) fresh = proj.sequences[i];
+        }
+        if (fresh) {
+            for (i = 0; i < proj.sequences.numSequences; i++) {
+                var s = proj.sequences[i];
+                if (s.sequenceID !== fresh.sequenceID && s.name === fresh.name) {
+                    stale.push(s);
+                }
+            }
+            // 先把新序列打開,再刪舊的:免得刪掉的正好是時間軸上開著那條
+            try { proj.openSequence(fresh.sequenceID); } catch (eOpen) { }
+        }
+
+        var removed = 0;
+        if (replace === "1" || replace === true) {
+            for (i = 0; i < stale.length; i++) {
+                if (prDeleteSequence(stale[i])) removed++;
+            }
+        }
 
         // 有字幕的話一併匯入(失敗不影響主流程)
         if (srtPath) {
@@ -29,7 +89,7 @@ function prImportEditedProject(xmlPath, srtPath) {
             }
         }
 
-        return "OK";
+        return "OK " + removed;
     } catch (e) {
         return "ERROR: " + e.toString();
     }
