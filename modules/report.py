@@ -12,7 +12,9 @@ import html
 
 
 def generate(timeline: Timeline, words: list[Word],
-            table: RemapTable, out_html: str) -> str:
+            table: RemapTable, out_html: str, live: bool = False) -> str:
+    """live=True(活專案模式):時間軸=原始影片,所有時間碼直接用原始位置,
+    切點是「建議」而非已執行;文案跟著調整。"""
     cuts = table.cuts_for_markers()      # 全部切點,報告裡都列出來
     fps = timeline.fps
 
@@ -45,7 +47,7 @@ def generate(timeline: Timeline, words: list[Word],
         badge = "需審閱" if c.confidence < cfg.MARKER_MAX_CONFIDENCE else "自動"
         rows.append(f"""
         <tr>
-          <td class="tc">{tc(c.timeline_frame)}</td>
+          <td class="tc">{tc(c.orig_frame if live else c.timeline_frame)}</td>
           <td>{c.reason}</td>
           <td style="color:{color};font-weight:500">{badge}</td>
           <td>{html.escape(c.text)}</td>
@@ -108,16 +110,15 @@ def generate(timeline: Timeline, words: list[Word],
 </style></head><body>
 <h1>剪輯審閱報告</h1>
 <div class="stats">
-  <div class="stat hi"><div class="num">{tc(saved_frames)}</div><div class="lbl">省下的時間({saved_pct:.0f}%)</div></div>
-  <div class="stat"><div class="num">{tc(orig_frames)} → {tc(edited_frames)}</div><div class="lbl">原長 → 剪後</div></div>
+  <div class="stat hi"><div class="num">{tc(saved_frames)}</div><div class="lbl">{"套用建議後預計省下" if live else "省下的時間"}({saved_pct:.0f}%)</div></div>
+  <div class="stat"><div class="num">{tc(orig_frames)} → {tc(edited_frames)}</div><div class="lbl">{"原長 → 套用建議後" if live else "原長 → 剪後"}</div></div>
   <div class="stat"><div class="num">{n_del} / {n_spd}</div><div class="lbl">刪除段 / 快轉段</div></div>
   <div class="stat"><div class="num">{len(music_segs)}</div><div class="lbl">音樂/音效段(共 {tc(music_frames)},已保護)</div></div>
   <div class="stat"><div class="num">{n_review}</div><div class="lbl">需人工審閱的切點</div></div>
 </div>
 <div class="summary">
-  下方 {len(cuts)} 個切點中,<b>{n_review}</b> 個標為「需審閱」(低信心,已在專案下 marker)。<br>
-  在 Premiere 用 Shift+M / Ctrl+Shift+M 逐點跳,只需確認「需審閱」的切點;「時間」欄是剪輯後影片的位置。<br>
-  若這裡看到大量誤判,先調 config/settings.py 的門檻再重跑,不用急著進 Premiere。
+  {"<b>活專案模式</b>:下方切點都只是「建議」,影片一刀未剪,全部片段都在時間軸上(粉紅=靜音、青綠=音樂、紫=冗詞)。<br>「時間」欄就是時間軸位置(=原始影片位置)。在 Premiere 時間軸右鍵「標籤 &gt; 選取標籤群組」可一次選同色片段批次刪除或改速度。<br>" if live else f"下方 {len(cuts)} 個切點中,<b>{n_review}</b> 個標為「需審閱」(低信心,已在專案下 marker)。<br>在 Premiere 用 Shift+M / Ctrl+Shift+M 逐點跳,只需確認「需審閱」的切點;「時間」欄是剪輯後影片的位置。<br>"}
+  若這裡看到大量誤判,先調設定的門檻再重跑,不用急著進 Premiere。
 </div>
 <table>
   <tr><th>時間</th><th>類型</th><th>狀態</th><th>詞</th><th>長度</th><th>信心</th>

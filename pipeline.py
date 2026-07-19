@@ -53,6 +53,17 @@ def get_fps(video_path: str) -> float:
     return round(float(num) / float(den), 3)
 
 
+def get_dimensions(video_path: str) -> tuple[int, int]:
+    """讀出影片的寬高(活專案 XML 需要)"""
+    out = subprocess.run([
+        "ffprobe", "-v", "0", "-select_streams", "v:0",
+        "-show_entries", "stream=width,height",
+        "-of", "csv=p=0", video_path,
+    ], capture_output=True, text=True, check=True).stdout.strip()
+    w, h = out.split(",")[:2]
+    return int(w), int(h)
+
+
 def get_total_frames(video_path: str, fps: float) -> int:
     out = subprocess.run([
         "ffprobe", "-v", "0", "-select_streams", "v:0",
@@ -131,10 +142,14 @@ def main():
     n_music = sum(1 for s in segments if s.reason == "music")
     print(f"  {len(segments)} 段:刪除 {n_del}、快轉 {n_spd}、音樂保護 {n_music}")
 
+    live = getattr(cfg, "DELIVERY_MODE", "live") == "live"
+
     # --- 3.5 混回影片:視需要先把快轉段的聲音抹成無聲,再混音 ---
     from modules.audio_clean import gate_speed_audio, mux_back
     audio_for_mux = clean_wav
-    if cfg.MUTE_SPEED_AUDIO and any(s.action == "speed" for s in segments):
+    # 活專案模式不預先抹音:快轉還沒真的發生,抹了會毀掉你可能想保留的聲音
+    if (not live) and cfg.MUTE_SPEED_AUDIO \
+            and any(s.action == "speed" for s in segments):
         audio_for_mux = gate_speed_audio(
             clean_wav, os.path.join(work, "01_clean_gated.wav"), segments, fps)
     print("  混回影片...")
@@ -142,35 +157,51 @@ def main():
 
     table = RemapTable(segments, fps)
 
-    # --- 4. 審閱模式產物:XML + marker + 字幕 + 報告 ---
+    # --- 4. 產物:XML + marker + 字幕 + 報告 ---
     print("[4/5] 產生審閱檔案")
-    from modules.premiere_xml import (build_v1_timeline, export_premiere_xml,
-                                       insert_markers, mute_speed_audio_in_xml)
     from modules.subtitles import write_srt
     from modules.report import generate as gen_report
+    from core.models import Segment
 
-    v1 = build_v1_timeline(timeline, os.path.join(work, "03_timeline.v1.json"))
     final_xml = os.path.join(work, "04_project.xml")
-    try:
-        raw_xml = export_premiere_xml(v1, os.path.join(work, "04_project_raw.xml"))
-        insert_markers(raw_xml, table, final_xml)
-        # 快轉段消音:把帶變速濾鏡的音訊片段停用(最可靠,見 mute_speed_audio_in_xml)
-        if cfg.MUTE_SPEED_AUDIO and any(s.action == "speed" for s in segments):
-            mute_speed_audio_in_xml(final_xml, final_xml)
-    except (FileNotFoundError, subprocess.CalledProcessError) as e:
-        print(f"  (auto-editor 尚未安裝或執行失敗,略過 XML:{e})")
+    if live:
+        # 活專案:全保留 + 標籤,自製 XML,不需要 auto-editor
+        from modules.premiere_xml import export_live_xml
+        w, h = get_dimensions(args.video)
+        export_live_xml(timeline, final_xml, w, h)
+        # 時間軸=原片,字幕不需要重映射(用「全保留」恆等映射)
+        sub_table = RemapTable([Segment(0, total_frames, "keep")], fps)
+    else:
+        from modules.premiere_xml import (build_v1_timeline, export_premiere_xml,
+                                           insert_markers, mute_speed_audio_in_xml)
+        v1 = build_v1_timeline(timeline,
+                               os.path.join(work, "03_timeline.v1.json"))
+        try:
+            raw_xml = export_premiere_xml(
+                v1, os.path.join(work, "04_project_raw.xml"))
+            insert_markers(raw_xml, table, final_xml)
+            # 快轉段消音:把帶變速濾鏡的音訊片段停用(最可靠)
+            if cfg.MUTE_SPEED_AUDIO and any(s.action == "speed" for s in segments):
+                mute_speed_audio_in_xml(final_xml, final_xml)
+        except (FileNotFoundError, subprocess.CalledProcessError) as e:
+            print(f"  (auto-editor 尚未安裝或執行失敗,略過 XML:{e})")
+        sub_table = table
 
-    subs = table.build_subtitles(
+    subs = sub_table.build_subtitles(
         words,
         max_chars=cfg.SUBTITLE_MAX_CHARS,
         max_gap_frames=round(cfg.SUBTITLE_MAX_GAP_SEC * fps),
     )
     write_srt(subs, fps, os.path.join(work, "04_subtitles.srt"))
-    gen_report(timeline, words, table, os.path.join(work, "04_report.html"))
+    gen_report(timeline, words, table, os.path.join(work, "04_report.html"),
+               live=live)
 
     # --- 5. 完成 ---
     print(f"\n[5/5] 完成 ✓  產物在 {work}/")
     print("  下一步:先開 04_report.html 掃一遍,再把 04_project.xml 匯入 Premiere")
+    if live:
+        print("  活專案:片段全保留,顏色=粉紅靜音/青綠音樂/紫冗詞。"
+              "時間軸右鍵『標籤 > 選取標籤群組』可一次選同色片段批次刪除或改速度")
 
 
 if __name__ == "__main__":

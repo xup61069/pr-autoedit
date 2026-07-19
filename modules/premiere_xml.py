@@ -15,7 +15,217 @@ from __future__ import annotations
 from core.models import Timeline, Cut
 from core.remap import RemapTable
 import config.settings as cfg
-import json, subprocess
+import json, os, subprocess
+
+
+# ============================================================
+# 「活專案」模式:自製 FCP7 XML(不依賴 auto-editor)
+# ============================================================
+# 結構完全比照 auto-editor 產出、且已在使用者的 Premiere 實測匯入
+# 成功的 XML(見 output/*/04_project_raw.xml):xmeml v5、一條視訊軌、
+# 兩條音訊軌(立體聲拆成兩條 exploded track)。
+#
+# 與烘焙模式的差別:所有段落「切開但都保留」——每段各自成為獨立
+# clipitem、start==in / end==out(時間軸=原始影片,零剪輯零變速),
+# 用顏色標籤區分種類,讓你在 Premiere 裡隨時決定怎麼處理:
+# 在時間軸右鍵選單「標籤 > 選取標籤群組」即可一次選起同色片段,
+# 再一起刪除或改速度。
+
+# 段落種類 -> Premiere 標籤色。label2 的值是 Premiere 認的英文色名
+# (auto-editor 也是這樣寫 Iris,已驗證匯入沒問題)。
+_LABELS = {
+    "speech": None,          # 語音:不上標籤,維持預設色
+    "silence": "Rose",       # 靜音:粉紅(候選:刪除或快轉)
+    "music": "Caribbean",    # 音樂/音效:青綠(受保護,別剪)
+    "filler": "Violet",      # 冗詞:紫(候選:刪除)
+}
+
+_CLIP_NAMES = {
+    "silence": "靜音", "music": "音樂", "filler": "冗詞",
+}
+
+
+def _segment_kind(s) -> str:
+    """把決策段落歸類成四種:speech / silence / music / filler"""
+    if s.reason == "music":
+        return "music"
+    if s.reason == "silence":
+        return "silence"
+    if s.reason == "filler":
+        return "filler"
+    return "speech"
+
+
+def export_live_xml(timeline: Timeline, out_xml: str,
+                    width: int, height: int) -> str:
+    """產生「活專案」XML:全部保留、依段落種類切開並上色。
+
+    timeline.segments 的 action(delete/speed)在這個模式下「不執行」,
+    只轉譯成標籤顏色與 clip 名稱;真正要不要刪、要不要快轉,
+    留到 Premiere 裡(手動批次、或之後的面板套用鈕)再決定。"""
+    from lxml import etree
+
+    fps = timeline.fps
+    timebase = round(fps)
+    ntsc = "TRUE" if abs(fps - timebase) > 0.01 else "FALSE"
+    total = max((s.end for s in timeline.segments), default=0)
+    src = timeline.source.replace("\\", "/")
+    stem = os.path.splitext(os.path.basename(src))[0]
+
+    def rate_el(parent):
+        r = etree.SubElement(parent, "rate")
+        etree.SubElement(r, "timebase").text = str(timebase)
+        etree.SubElement(r, "ntsc").text = ntsc
+        return r
+
+    root = etree.Element("xmeml", version="5")
+    seq = etree.SubElement(root, "sequence", explodedTracks="true")
+    etree.SubElement(seq, "name").text = f"{stem} 活專案"
+    etree.SubElement(seq, "duration").text = str(total)
+    rate_el(seq)
+    media = etree.SubElement(seq, "media")
+
+    # ---------- 視訊 ----------
+    video = etree.SubElement(media, "video")
+    vfmt = etree.SubElement(video, "format")
+    sc = etree.SubElement(vfmt, "samplecharacteristics")
+    etree.SubElement(sc, "width").text = str(width)
+    etree.SubElement(sc, "height").text = str(height)
+    etree.SubElement(sc, "pixelaspectratio").text = "square"
+    rate_el(sc)
+    vtrack = etree.SubElement(video, "track")
+
+    segs = timeline.segments
+    n = len(segs)
+
+    def file_el(parent, first: bool):
+        if not first:
+            etree.SubElement(parent, "file", id="file-1")
+            return
+        f = etree.SubElement(parent, "file", id="file-1")
+        etree.SubElement(f, "name").text = stem
+        etree.SubElement(f, "pathurl").text = src
+        tcode = etree.SubElement(f, "timecode")
+        etree.SubElement(tcode, "string").text = "00:00:00:00"
+        etree.SubElement(tcode, "displayformat").text = \
+            "DF" if ntsc == "TRUE" else "NDF"
+        rate_el(tcode)
+        rate_el(f)
+        etree.SubElement(f, "duration").text = str(total)
+        fm = etree.SubElement(f, "media")
+        fv = etree.SubElement(fm, "video")
+        fsc = etree.SubElement(fv, "samplecharacteristics")
+        rate_el(fsc)
+        etree.SubElement(fsc, "width").text = str(width)
+        etree.SubElement(fsc, "height").text = str(height)
+        etree.SubElement(fsc, "pixelaspectratio").text = "square"
+        fa = etree.SubElement(fm, "audio")
+        asc = etree.SubElement(fa, "samplecharacteristics")
+        etree.SubElement(asc, "depth").text = "16"
+        etree.SubElement(asc, "samplerate").text = "48000"
+        etree.SubElement(fa, "channelcount").text = "2"
+
+    def label_el(parent, kind: str):
+        color = _LABELS.get(kind)
+        if color:
+            labels = etree.SubElement(parent, "labels")
+            etree.SubElement(labels, "label2").text = color
+
+    def clip_name(s, kind: str) -> str:
+        if kind == "speech":
+            return stem
+        base = _CLIP_NAMES[kind]
+        if kind == "filler" and s.text:
+            return f"{base} {s.text}"
+        if kind == "silence":
+            return f"{base} {s.duration / fps:.1f}s"
+        return base
+
+    def link_el(parent, ref: str, mediatype: str, trackindex: int, clipindex: int):
+        lk = etree.SubElement(parent, "link")
+        etree.SubElement(lk, "linkclipref").text = ref
+        etree.SubElement(lk, "mediatype").text = mediatype
+        etree.SubElement(lk, "trackindex").text = str(trackindex)
+        etree.SubElement(lk, "clipindex").text = str(clipindex)
+
+    # 視訊軌 clipitem:id 1..n;音訊兩軌:n+1..2n、2n+1..3n
+    for i, s in enumerate(segs):
+        kind = _segment_kind(s)
+        c = etree.SubElement(vtrack, "clipitem", id=f"clipitem-{i + 1}")
+        etree.SubElement(c, "name").text = clip_name(s, kind)
+        etree.SubElement(c, "enabled").text = "TRUE"
+        etree.SubElement(c, "start").text = str(s.start)
+        etree.SubElement(c, "end").text = str(s.end)
+        etree.SubElement(c, "in").text = str(s.start)   # 全保留:時間軸=原片
+        etree.SubElement(c, "out").text = str(s.end)
+        file_el(c, first=(i == 0))
+        etree.SubElement(c, "compositemode").text = "normal"
+        link_el(c, f"clipitem-{i + 1}", "video", 1, i + 1)
+        link_el(c, f"clipitem-{n + i + 1}", "audio", 1, i + 1)
+        link_el(c, f"clipitem-{2 * n + i + 1}", "audio", 2, i + 1)
+        label_el(c, kind)
+
+    # ---------- 音訊(立體聲拆兩條軌)----------
+    audio = etree.SubElement(media, "audio")
+    etree.SubElement(audio, "numOutputChannels").text = "2"
+    afmt = etree.SubElement(audio, "format")
+    asc = etree.SubElement(afmt, "samplecharacteristics")
+    etree.SubElement(asc, "depth").text = "16"
+    etree.SubElement(asc, "samplerate").text = "48000"
+
+    for ch in (0, 1):
+        atrack = etree.SubElement(
+            audio, "track", totalExplodedTrackCount="2",
+            premiereTrackType="Stereo", currentExplodedTrackIndex=str(ch))
+        etree.SubElement(atrack, "outputchannelindex").text = str(ch + 1)
+        for i, s in enumerate(segs):
+            kind = _segment_kind(s)
+            cid = (n if ch == 0 else 2 * n) + i + 1
+            c = etree.SubElement(atrack, "clipitem", id=f"clipitem-{cid}",
+                                 premiereChannelType="stereo")
+            etree.SubElement(c, "name").text = clip_name(s, kind)
+            etree.SubElement(c, "enabled").text = "TRUE"
+            etree.SubElement(c, "start").text = str(s.start)
+            etree.SubElement(c, "end").text = str(s.end)
+            etree.SubElement(c, "in").text = str(s.start)
+            etree.SubElement(c, "out").text = str(s.end)
+            etree.SubElement(c, "file", id="file-1")
+            st = etree.SubElement(c, "sourcetrack")
+            etree.SubElement(st, "mediatype").text = "audio"
+            etree.SubElement(st, "trackindex").text = "1"
+            label_el(c, kind)
+
+    # ---------- Marker(時間軸=原片,位置直接用原始幀)----------
+    n_marks = 0
+    for s in segs:
+        kind = _segment_kind(s)
+        if kind == "music":
+            name, comment = "[音樂] 確認這段是不是要保留的音樂/音效", \
+                f"長度 {s.duration / fps:.1f} 秒"
+        elif kind == "filler" and s.confidence < cfg.MARKER_MAX_CONFIDENCE \
+                and s.duration / fps * 1000 >= cfg.MARKER_MIN_DURATION_MS:
+            name, comment = f"[冗詞] {s.text}", \
+                f"信心 {s.confidence:.2f},建議刪除"
+        else:
+            continue                 # 靜音段靠標籤色就夠,不下 marker
+        m = etree.SubElement(seq, "marker")
+        etree.SubElement(m, "name").text = name
+        etree.SubElement(m, "comment").text = comment
+        etree.SubElement(m, "in").text = str(s.start)
+        etree.SubElement(m, "out").text = "-1"
+        n_marks += 1
+
+    etree.ElementTree(root).write(out_xml, encoding="UTF-8",
+                                  xml_declaration=True, pretty_print=True)
+    n_by = {}
+    for s in segs:
+        k = _segment_kind(s)
+        n_by[k] = n_by.get(k, 0) + 1
+    print(f"  活專案 XML:{len(segs)} 個片段"
+          f"(語音 {n_by.get('speech', 0)}、靜音 {n_by.get('silence', 0)}、"
+          f"音樂 {n_by.get('music', 0)}、冗詞 {n_by.get('filler', 0)})、"
+          f"{n_marks} 個 marker -> {out_xml}")
+    return out_xml
 
 
 def build_v1_timeline(timeline: Timeline, out_json: str) -> str:
