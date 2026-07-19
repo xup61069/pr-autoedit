@@ -32,6 +32,16 @@ from core.remap import RemapTable
 import config.settings as cfg
 
 
+def has_audio(video_path: str) -> bool:
+    """檢查影片有沒有音軌(沒有的話後續轉錄、剪輯都無從做起)"""
+    out = subprocess.run([
+        "ffprobe", "-v", "0", "-select_streams", "a:0",
+        "-show_entries", "stream=codec_type",
+        "-of", "csv=p=0", video_path,
+    ], capture_output=True, text=True).stdout.strip()
+    return out == "audio"
+
+
 def get_fps(video_path: str) -> float:
     """用 ffprobe 讀出影片幀率"""
     out = subprocess.run([
@@ -63,6 +73,11 @@ def main():
 
     if not os.path.exists(args.video):
         sys.exit(f"找不到檔案:{args.video}")
+
+    if not has_audio(args.video):
+        sys.exit("這支影片沒有音軌,無法處理。\n"
+                 "本工具需要有聲音才能轉字幕、去冗詞、剪停頓。\n"
+                 "請確認你選的是有收音的錄影檔。")
 
     name = os.path.splitext(os.path.basename(args.video))[0]
     work = os.path.join("output", name)
