@@ -37,8 +37,9 @@ for _s in (sys.stdout, sys.stderr):
 import config.settings as cfg
 
 # 進階頁裡「預設折疊」的分組(基本頁的分組一律展開)
+# 註:降噪外掛(VST)刻意不折疊,讓使用者一眼看到降噪設定
 COLLAPSED_GROUPS = [
-    "降噪外掛(VST)", "冗詞與口頭禪", "字幕", "審閱標記", "其他微調",
+    "冗詞與口頭禪", "字幕", "審閱標記", "其他微調",
 ]
 
 FIELDS = [
@@ -58,6 +59,10 @@ FIELDS = [
      "tier": "common", "group": "辨識", "options": ["paraformer-zh"],
      "show_if": {"ASR_ENGINE": ["funasr"]},
      "hint": "FunASR 使用的模型。目前支援 paraformer-zh(純中文較準)"},
+    {"key": "WHISPER_LANGUAGE", "label": "影片主要語言", "type": "select",
+     "tier": "common", "group": "辨識",
+     "options": ["auto", "zh", "en", "ja", "ko", "yue", "de", "fr", "es"],
+     "hint": "auto=自動偵測、zh=中文、en=英文、ja=日文、ko=韓文、yue=粵語"},
 
     # --- 分組:剪輯 ---
     {"key": "AUDIO_MODE", "label": "聲音處理方式", "type": "select",
@@ -142,10 +147,6 @@ FIELDS = [
      "tier": "advanced", "group": "其他微調", "min": -30, "max": -6, "step": 0.5,
      "default": -14.0, "soft": True,
      "hint": "整體音量標準(LUFS)。YouTube 建議 -14,數字越小越安靜"},
-    {"key": "WHISPER_LANGUAGE", "label": "影片主要語言", "type": "select",
-     "tier": "advanced", "group": "其他微調",
-     "options": ["auto", "zh", "en", "ja", "ko", "yue", "de", "fr", "es"],
-     "hint": "auto=自動偵測、zh=中文、en=英文、ja=日文、ko=韓文、yue=粵語"},
 ]
 
 
