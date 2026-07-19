@@ -159,8 +159,15 @@ def main():
             clean_wav, os.path.join(work, "01_clean_gated.wav"), segments, fps)
 
     # 重算模式(--skip-audio)時,若上次混好的影片內容相同就直接沿用,
-    # 免得每按一次「重算剪輯」都要重新混音(4K 影片一次要幾十秒)
-    mux_kind = "gated" if audio_for_mux != clean_wav else "plain"
+    # 免得每按一次「重算剪輯」都要重新混音(4K 影片一次要幾十秒)。
+    # 注意:消音版的內容取決於「哪幾段被消音」,所以要把段落位置一起
+    # 算進比對,靜音門檻一改就會正確地重新混音。
+    if audio_for_mux != clean_wav:
+        gated_spans = ",".join(f"{s.start}-{s.end}"
+                               for s in segments if s.action == "speed")
+        mux_kind = f"gated:{gated_spans}"
+    else:
+        mux_kind = "plain"
     mux_info = os.path.join(work, "01_mux_info.txt")
     reuse_mux = False
     if args.skip_audio and os.path.exists(clean_mp4) and os.path.exists(mux_info):

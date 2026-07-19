@@ -388,9 +388,12 @@
     $("pick").disabled = true;
     $("log").textContent = "";
     setStatus("處理中,請稍候…(第一次會下載模型,較久)");
+    appendLog("▶ 已啟動,正在載入程式與模型…(下面沒動靜是正常的,請稍候)\n");
 
     var name = path.basename(selectedVideo, path.extname(selectedVideo));
-    var proc = cp.spawn(PYTHON, ["pipeline.py", selectedVideo], { cwd: PROJECT_DIR });
+    // -u = 不緩衝輸出:Python 的進度訊息才會「即時」出現在下面,
+    // 不然會累積到一大段才一次噴出來,看起來像當掉
+    var proc = cp.spawn(PYTHON, ["-u", "pipeline.py", selectedVideo], { cwd: PROJECT_DIR });
     proc.stdout.on("data", function (d) { appendLog(d.toString()); });
     proc.stderr.on("data", function (d) { appendLog(d.toString()); });
     proc.on("error", function (e) {
@@ -405,7 +408,7 @@
       var xml = toFwd(path.join(outDir, "04_project.xml"));
       var srt = toFwd(path.join(outDir, "04_subtitles.srt"));
       cs.evalScript('prImportEditedProject("' + xml + '","' + srt + '")', function (r) {
-        if (r && r.indexOf("OK") === 0) setStatus("完成 ✓ 已匯入序列與字幕(活專案:同色片段可批次處理)");
+        if (r && r.indexOf("OK") === 0) setStatus("完成 ✓ 已匯入序列與字幕;想調靈敏度→改設定→按「重算剪輯」");
         else setStatus("Python 跑完了,但匯入時出錯:" + r);
         $("run").disabled = false;
         rememberVideo(selectedVideo);
@@ -462,8 +465,9 @@
     if (!lastVideo) return;
     setAfterButtons(false);
     afterSay("用目前設定重算中…(不重跑辨識,通常幾秒)", true);
+    appendLog("▶ 重算已啟動(用新設定重新決策,不重跑辨識)…\n");
     saveSettings(function () {
-      var proc = cp.spawn(PYTHON, ["pipeline.py", lastVideo, "--skip-audio"],
+      var proc = cp.spawn(PYTHON, ["-u", "pipeline.py", lastVideo, "--skip-audio"],
         { cwd: PROJECT_DIR });
       proc.stdout.on("data", function (d) { appendLog(d.toString()); });
       proc.stderr.on("data", function (d) { appendLog(d.toString()); });
@@ -547,7 +551,8 @@
         afterSay("讀不到序列版面:" + r, false); setAfterButtons(true); return;
       }
       afterSay("依序列版面對位字幕中…", true);
-      cp.execFile(PYTHON, ["-m", "modules.live_subs", layout, outDir],
+      appendLog("▶ 字幕對位已啟動…\n");
+      cp.execFile(PYTHON, ["-u", "-m", "modules.live_subs", layout, outDir],
         { cwd: PROJECT_DIR, maxBuffer: 4 * 1024 * 1024 },
         function (err, stdout, stderr) {
           appendLog(String(stdout || "") + String(stderr || ""));
