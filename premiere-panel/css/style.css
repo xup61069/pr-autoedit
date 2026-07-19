@@ -107,3 +107,18 @@ h1 {
   border: 1px solid #4a4a4a; background: #2a2a2a; color: #bbb; user-select: none;
 }
 .cat.on { background: #2d6cdf; border-color: #2d6cdf; color: #fff; }
+
+/* 按鈕排 / 次要按鈕 / 返回 */
+.row { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.btn.ghost { background: transparent; border-color: #4a4a4a; color: #bbb; }
+.btn.ghost:hover:not(:disabled) { background: #333; color: #ddd; }
+.section-head.plain {
+  border: none; background: transparent; padding: 4px 0; color: #aaa;
+  display: inline-flex; gap: 4px; margin-bottom: 4px;
+}
+.section-head.plain:hover { background: transparent; color: #fff; }
+
+/* 數字:滑條 + 數字框(數字框自帶上下按鈕) */
+.numrow { display: flex; align-items: center; gap: 8px; }
+.numrow input[type="range"] { flex: 1; min-width: 60px; accent-color: #2d6cdf; }
+.numrow input[type="number"] { width: 66px; flex: none; text-align: right; }

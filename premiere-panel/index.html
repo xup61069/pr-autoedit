@@ -5,33 +5,52 @@
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <h1>PR 自動剪輯</h1>
 
-  <button id="pick" class="btn">1. 選擇影片</button>
-  <div id="videoPath" class="path">尚未選擇影片</div>
+  <!-- ===== 第一頁:主畫面 ===== -->
+  <div id="page-main">
+    <h1>PR 自動剪輯</h1>
 
-  <!-- 設定區(自動由 ui_settings.py 產生)-->
-  <div class="section">
-    <div class="section-head" id="settingsHead">
-      <span>⚙ 設定</span><span id="settingsToggle" class="chev">▸</span>
+    <button id="pick" class="btn">1. 選擇影片</button>
+    <div id="videoPath" class="path">尚未選擇影片</div>
+
+    <!-- 設定區(常用) -->
+    <div class="section">
+      <div class="section-head" id="settingsHead">
+        <span>⚙ 設定</span><span id="settingsToggle" class="chev">▸</span>
+      </div>
+      <div id="settingsBody" class="section-body" style="display:none">
+        <div id="formCommon" class="form"></div>
+        <div class="row">
+          <button id="save" class="btn small">儲存設定</button>
+          <button id="toAdv" class="btn small ghost">進階設定 →</button>
+          <span id="saveMsg" class="savemsg"></span>
+        </div>
+      </div>
     </div>
-    <div id="settingsBody" class="section-body" style="display:none">
-      <div id="formCommon" class="form"></div>
-      <div class="adv-head" id="advHead"><span id="advChev" class="chev">▸</span> 進階設定</div>
-      <div id="formAdvanced" class="form" style="display:none"></div>
-      <button id="save" class="btn small">儲存設定</button>
-      <span id="saveMsg" class="savemsg"></span>
+
+    <button id="run" class="btn primary" disabled>2. 一鍵自動剪輯</button>
+
+    <div id="status" class="status">準備就緒</div>
+    <pre id="log" class="log"></pre>
+
+    <div class="hint">
+      完成後會自動把剪好的序列與字幕匯入 Premiere,再開審閱報告。
+      你只要跳著確認 marker。
     </div>
   </div>
 
-  <button id="run" class="btn primary" disabled>2. 一鍵自動剪輯</button>
-
-  <div id="status" class="status">準備就緒</div>
-  <pre id="log" class="log"></pre>
-
-  <div class="hint">
-    完成後會自動把剪好的序列與字幕匯入 Premiere,再開審閱報告。
-    你只要跳著確認 marker。
+  <!-- ===== 第二頁:進階設定 ===== -->
+  <div id="page-adv" style="display:none">
+    <div class="section-head plain" id="backHead">
+      <span class="chev">◂</span><span>返回</span>
+    </div>
+    <h1>進階設定</h1>
+    <div class="hint" style="margin:0 0 8px">這些平常不用動;每項下方有白話說明。</div>
+    <div id="formAdvanced" class="form"></div>
+    <div class="row">
+      <button id="save2" class="btn small">儲存設定</button>
+      <span id="saveMsg2" class="savemsg"></span>
+    </div>
   </div>
 
   <script src="js/CSInterface.js"></script>

@@ -22,6 +22,18 @@
   function appendLog(t) { $("log").textContent += t; $("log").scrollTop = $("log").scrollHeight; }
   function toFwd(p) { return String(p).replace(/\\/g, "/"); }
 
+  // ---------- 頁面切換 ----------
+  $("toAdv").addEventListener("click", function () {
+    $("page-main").style.display = "none";
+    $("page-adv").style.display = "block";
+    window.scrollTo(0, 0);
+  });
+  $("backHead").addEventListener("click", function () {
+    $("page-adv").style.display = "none";
+    $("page-main").style.display = "block";
+    window.scrollTo(0, 0);
+  });
+
   // ---------- 選擇影片 ----------
   $("pick").addEventListener("click", function () {
     var res = window.cep.fs.showOpenDialog(false, false, "選擇要剪輯的影片", "",
@@ -34,7 +46,7 @@
     }
   });
 
-  // ---------- 設定區摺疊 ----------
+  // ---------- 設定區摺疊(第一次展開才載入) ----------
   $("settingsHead").addEventListener("click", function () {
     var body = $("settingsBody");
     var open = body.style.display === "none";
@@ -42,22 +54,16 @@
     $("settingsToggle").textContent = open ? "▾" : "▸";
     if (open && !settingsData) { loadSettings(); }
   });
-  $("advHead").addEventListener("click", function () {
-    var adv = $("formAdvanced");
-    var open = adv.style.display === "none";
-    adv.style.display = open ? "block" : "none";
-    $("advChev").textContent = open ? "▾" : "▸";
-  });
 
   // ---------- 讀取目前設定並產生表單 ----------
   function loadSettings() {
     $("formCommon").textContent = "讀取設定中…";
-    cp.execFile(PYTHON, ["ui_settings.py", "dump"], { cwd: PROJECT_DIR, maxBuffer: 4 * 1024 * 1024 },
+    cp.execFile(PYTHON, ["ui_settings.py", "dump"],
+      { cwd: PROJECT_DIR, maxBuffer: 4 * 1024 * 1024 },
       function (err, stdout) {
         if (err) { $("formCommon").textContent = "讀取設定失敗:" + err.message; return; }
-        try { settingsData = JSON.parse(stdout); } catch (e) {
-          $("formCommon").textContent = "設定格式解析失敗"; return;
-        }
+        try { settingsData = JSON.parse(stdout); }
+        catch (e) { $("formCommon").textContent = "設定格式解析失敗"; return; }
         renderForm();
       });
   }
@@ -72,14 +78,14 @@
     });
   }
 
-  // 依欄位型別產生一個控制項,並登記讀值函式到 controls[key]
+  // 依欄位型別產生一個控制項,登記讀值函式到 controls[key]
   function controlFor(f, value) {
     var wrap = document.createElement("div");
     wrap.className = "field" + (f.type === "bool" ? " bool" : "");
     var label = document.createElement("label");
     label.textContent = f.label;
-
     var input;
+
     if (f.type === "select") {
       input = document.createElement("select");
       (f.options || []).forEach(function (o) {
@@ -97,13 +103,32 @@
       controls[f.key] = function () { return input.checked; };
 
     } else if (f.type === "number") {
-      input = document.createElement("input");
-      input.type = "number";
-      if (f.min !== undefined) input.min = f.min;
-      if (f.max !== undefined) input.max = f.max;
-      if (f.step !== undefined) input.step = f.step;
-      input.value = value;
-      controls[f.key] = function () { return parseFloat(input.value); };
+      input = document.createElement("div");
+      input.className = "numrow";
+      var range = document.createElement("input");
+      range.type = "range";
+      var num = document.createElement("input");
+      num.type = "number";
+      [range, num].forEach(function (x) {
+        if (f.min !== undefined) x.min = f.min;
+        if (f.max !== undefined) x.max = f.max;
+        if (f.step !== undefined) x.step = f.step;
+      });
+      function clamp(v) {
+        v = parseFloat(v);
+        if (isNaN(v)) v = (f.min !== undefined ? f.min : 0);
+        if (f.min !== undefined && v < f.min) v = f.min;
+        if (f.max !== undefined && v > f.max) v = f.max;
+        return v;
+      }
+      range.value = value; num.value = value;
+      range.addEventListener("input", function () { num.value = range.value; });
+      num.addEventListener("input", function () { range.value = num.value; });
+      num.addEventListener("change", function () {
+        var c = clamp(num.value); num.value = c; range.value = c;
+      });
+      input.appendChild(range); input.appendChild(num);
+      controls[f.key] = function () { return clamp(num.value); };
 
     } else if (f.type === "list") {
       input = document.createElement("input");
@@ -141,7 +166,6 @@
       controls[f.key] = function () { return picked.slice(); };
     }
 
-    // bool 的 label 排在核取方塊後面(CSS 用 order 處理)
     wrap.appendChild(label);
     wrap.appendChild(input);
     if (f.hint) {
@@ -157,31 +181,36 @@
     var out = {};
     Object.keys(controls).forEach(function (k) {
       var v = controls[k]();
-      if (typeof v === "number" && isNaN(v)) return;   // 空數字欄跳過
+      if (typeof v === "number" && isNaN(v)) return;
       out[k] = v;
     });
     return out;
   }
 
   // ---------- 儲存設定到 settings_local.json ----------
-  function saveSettings(cb) {
+  function saveSettings(cb, msgId) {
+    var msg = $(msgId || "saveMsg");
     if (!settingsData) { if (cb) cb(); return; }
     var vals = collectValues();
     var dst = path.join(PROJECT_DIR, "config", "settings_local.json");
     fs.writeFile(dst, JSON.stringify(vals, null, 2), { encoding: "utf8" }, function (err) {
-      if (err) { $("saveMsg").textContent = "儲存失敗:" + err.message; $("saveMsg").style.color = "#e06c6c"; }
-      else { $("saveMsg").textContent = "已儲存 ✓"; $("saveMsg").style.color = "#2e8b57";
-             setTimeout(function () { $("saveMsg").textContent = ""; }, 2500); }
+      if (msg) {
+        if (err) { msg.textContent = "儲存失敗:" + err.message; msg.style.color = "#e06c6c"; }
+        else {
+          msg.textContent = "已儲存 ✓"; msg.style.color = "#2e8b57";
+          setTimeout(function () { msg.textContent = ""; }, 2500);
+        }
+      }
       if (cb) cb(err);
     });
   }
-  $("save").addEventListener("click", function () { saveSettings(); });
+  $("save").addEventListener("click", function () { saveSettings(null, "saveMsg"); });
+  $("save2").addEventListener("click", function () { saveSettings(null, "saveMsg2"); });
 
   // ---------- 一鍵自動剪輯 ----------
   $("run").addEventListener("click", function () {
     if (!selectedVideo) return;
-    // 先把目前表單設定存起來(若使用者調過),再跑
-    saveSettings(function () { runPipeline(); });
+    saveSettings(function () { runPipeline(); }, "saveMsg");
   });
 
   function runPipeline() {
