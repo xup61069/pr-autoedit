@@ -69,3 +69,41 @@ h1 {
   margin-top: 10px;
   line-height: 1.6;
 }
+
+/* 設定區 */
+.section { margin: 6px 0; border: 1px solid #3a3a3a; border-radius: 5px; }
+.section-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 10px; cursor: pointer; background: #2b2b2b; user-select: none;
+  border-radius: 5px;
+}
+.section-head:hover { background: #333; }
+.chev { color: #888; font-size: 11px; }
+.section-body { padding: 8px 10px; }
+.btn.small { padding: 6px 10px; font-size: 12px; margin: 8px 0 0; width: auto; }
+.savemsg { font-size: 11px; color: #2e8b57; margin-left: 8px; }
+.adv-head {
+  font-size: 12px; color: #aaa; cursor: pointer; user-select: none;
+  padding: 6px 0; margin-top: 4px; border-top: 1px solid #333;
+}
+.adv-head:hover { color: #ddd; }
+
+/* 表單控制項 */
+.field { margin: 8px 0; }
+.field > label { display: block; font-size: 12px; color: #cfcfcf; margin-bottom: 3px; }
+.field .fhint { font-size: 10px; color: #777; margin-top: 2px; }
+.field input[type="text"], .field input[type="number"], .field select, .field textarea {
+  width: 100%; box-sizing: border-box; background: #1c1c1c; color: #e8e8e8;
+  border: 1px solid #444; border-radius: 4px; padding: 5px 7px; font-size: 12px;
+  font-family: inherit;
+}
+.field textarea { resize: vertical; min-height: 44px; }
+.field.bool { display: flex; align-items: center; gap: 7px; }
+.field.bool > label { margin: 0; order: 2; }
+.field.bool input { width: auto; }
+.cats { display: flex; flex-wrap: wrap; gap: 6px; }
+.cat {
+  font-size: 12px; padding: 4px 10px; border-radius: 12px; cursor: pointer;
+  border: 1px solid #4a4a4a; background: #2a2a2a; color: #bbb; user-select: none;
+}
+.cat.on { background: #2d6cdf; border-color: #2d6cdf; color: #fff; }
