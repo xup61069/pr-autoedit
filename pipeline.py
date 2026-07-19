@@ -105,6 +105,11 @@ def main():
     audio_for_asr = clean_wav if os.path.exists(clean_wav) else args.video
     words = transcribe(audio_for_asr, cache_json=cache)
 
+    if not words:
+        print("  ⚠ 幾乎沒偵測到語音。若這是口白影片,可能是聲音太小、"
+              "或 config 的 WHISPER_LANGUAGE 設錯;\n"
+              "    這種情況下整支片會被當成靜音處理,產出可能不如預期。")
+
     total_frames = get_total_frames(args.video, fps)
 
     # --- 3. 決策引擎 ---

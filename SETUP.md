@@ -6,15 +6,18 @@
 
 ## 第一部分:一次性安裝(大約 30 分鐘)
 
-### 1. 裝 Python 3.11
-到 python.org 下載 3.11 版(**不要用 3.12 以上**,有些套件還沒跟上)。
+### 1. 裝 Python(3.11 ~ 3.13 都可以)
+到 python.org 下載 3.11、3.12 或 3.13 版(都實測可用)。
 安裝時**務必勾選** "Add Python to PATH"。
+
+> 小提醒:只有「免費降噪 DeepFilterNet」那條選用路線在 3.13 上要另外裝 Rust
+> 才裝得起來(見第 6 步);主流程與 VST 降噪在 3.13 完全正常。
 
 裝完打開「命令提示字元」(cmd),輸入確認:
 ```
 python --version
 ```
-應該顯示 `Python 3.11.x`。
+應該顯示 `Python 3.11 / 3.12 / 3.13` 其中之一。
 
 ### 2. 裝 ffmpeg
 1. 到 https://www.gyan.dev/ffmpeg/builds/ 下載 "ffmpeg-release-full.7z"
@@ -104,20 +107,38 @@ python pipeline.py D:\影片\我的教學_0718.mp4
 
 ### 調整判定(讓它更貼合你的說話習慣)
 改 `config\settings.py`,常調的幾個:
+- `CUSTOM_VOCAB`:**改善辨識最有效的一招**。把你常講的術語、軟體名、
+  頻道名、人名列進去,辨識就會準很多(例如 MIDI 才不會被聽成「謎底」)。
 - `SILENCE_THRESHOLD_SEC`:靜音門檻,講話慢的人調高(1.5),快的人調低(1.0)
+- `SILENCE_ACTION`:`"speed"`=靜音快轉、`"delete"`=直接剪掉
+- `MUTE_SPEED_AUDIO`:快轉段是否靜音(True 可避免加速產生的尖聲)
+- `SILENCE_SPEED_FACTOR`:快轉倍率(預設 6.0)
 - `FILLERS_CONDITIONAL`:加入你的個人口頭禪
-- `SILENCE_ACTION`:改 `"delete"` 就是直接剪掉靜音而非快轉
+
+> **不想動到共用設定?** 在 `config\` 底下自建一個 `settings_local.py`,
+> 裡面寫的設定會蓋過預設值,而且不進版控、更新專案也不會被覆蓋。
+> 例:`CUSTOM_VOCAB = ["我的頻道名", "常用術語"]`
 
 **調完重跑不用重新轉錄** —— 轉錄有快取(02_transcript.json),
 改門檻重跑只會重算決策那步,幾秒就好:
 ```
 python pipeline.py D:\影片\我的教學_0718.mp4 --skip-audio
 ```
+(但若改了 `CUSTOM_VOCAB` 想讓辨識重來,要先刪掉 `02_transcript.json`)
 
 ### 音訊要走 VST 路線的話
 1. 改 `config\settings.py` 的 `AUDIO_MODE = "vst"`
+   (`"none"` = 不處理聲音,適合第一次測整條管線最快)
 2. 把你的 .vst3 路徑依序填進 `VST_CHAIN`(降噪→EQ→壓縮→limiter 的順序)
 3. 重跑(這時不要加 --skip-audio,因為要重做音訊)
+
+> 有些外掛的 .vst3 要指到「內層」的檔案(例如
+> `...\VoiceFX.vst3\Contents\x86_64-win\VoiceFX.vst3`),
+> 指到外層資料夾會載入失敗。載入不了就改試內層路徑。
+
+### 想全程不離開 Premiere?
+專案內有一個 `premiere-panel\` 資料夾,是 Premiere 面板(在 Premiere 裡按一個
+按鈕就跑完並自動匯入)。安裝與使用見 `premiere-panel\README.md`。
 
 ---
 
