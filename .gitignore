@@ -37,3 +37,4 @@ Thumbs.db
 
 # 個人設定覆寫(不進版控,保留你自己的門檻/詞表/VST 路徑)
 config/settings_local.py
+config/settings_local.json

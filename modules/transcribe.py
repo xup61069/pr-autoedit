@@ -42,13 +42,30 @@ def transcribe(audio_path: str, cache_json: str | None = None) -> list[Word]:
     return words
 
 
+def effective_vocab() -> list[str]:
+    """合併『教學類型詞庫』(VOCAB_CATEGORIES 選到的)與個人額外術語
+    (CUSTOM_VOCAB),去重、保序。這是辨識提示詞/熱詞的實際用詞。"""
+    terms: list[str] = []
+    presets = getattr(cfg, "VOCAB_PRESETS", {}) or {}
+    for cat in getattr(cfg, "VOCAB_CATEGORIES", []) or []:
+        terms += presets.get(cat, [])
+    terms += getattr(cfg, "CUSTOM_VOCAB", []) or []
+    seen: set[str] = set()
+    out: list[str] = []
+    for t in terms:
+        if t and t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
+
+
 def _build_initial_prompt() -> str:
     """組出給辨識引擎的開場提示詞。
-    優先用完全自訂的 WHISPER_INITIAL_PROMPT;否則用 CUSTOM_VOCAB 自動組。"""
+    優先用完全自訂的 WHISPER_INITIAL_PROMPT;否則用教學類型 + 個人術語自動組。"""
     if getattr(cfg, "WHISPER_INITIAL_PROMPT", None):
         return cfg.WHISPER_INITIAL_PROMPT
     base = "以下是一段中文教學影片的口白。"
-    vocab = getattr(cfg, "CUSTOM_VOCAB", None)
+    vocab = effective_vocab()
     if vocab:
         base += "常見詞彙:" + "、".join(vocab) + "。"
     return base
@@ -106,7 +123,7 @@ def _transcribe_funasr(audio_path: str) -> list[Word]:
         _funasr_model = AutoModel(model="paraformer-zh", vad_model="fsmn-vad",
                                   disable_update=True, log_level="ERROR")
 
-    hotword = " ".join(getattr(cfg, "CUSTOM_VOCAB", []) or [])
+    hotword = " ".join(effective_vocab())
     print("  轉錄中...")
     res = _funasr_model.generate(input=audio_path, batch_size_s=300,
                                  hotword=hotword)

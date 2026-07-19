@@ -75,12 +75,29 @@ WHISPER_LANGUAGE = "zh"
 WHISPER_DEVICE = "cuda"          # 你有 NVIDIA GPU
 WHISPER_COMPUTE_TYPE = "float16" # GPU 用 float16;若報錯改 "int8_float16"
 
-# 你常講的專有名詞/術語/軟體名/人名,列在這裡可提高辨識準確度。
-# 例:剪 Premiere 教學就放剪輯詞;剪 FL Studio 就放編曲詞。兩種都放也可以。
-CUSTOM_VOCAB = [
-    "Premiere", "Pro", "FL Studio", "Pattern", "Mixer", "MIDI",
-    "VST", "EQ", "時間軸", "字幕", "渲染", "外掛",
-]
+# 教學類型詞庫:選了對應類型,該領域常見術語會自動加進辨識提示,大幅減少
+# 專有名詞被聽錯(例如 MIDI 被聽成「謎底」)。可複選(見 VOCAB_CATEGORIES)。
+VOCAB_PRESETS = {
+    "剪輯": ["Premiere", "Pro", "時間軸", "序列", "轉場", "關鍵影格",
+             "字幕", "渲染", "輸出", "調色", "遮罩", "軌道", "外掛"],
+    "編曲": ["FL Studio", "Pattern", "Mixer", "MIDI", "Playlist",
+             "Piano Roll", "Snare", "Kick", "Clap", "Hi-hat", "Sample",
+             "BPM", "VST", "EQ", "Reverb", "Compressor", "取樣"],
+    "特效": ["After Effects", "AE", "圖層", "遮罩", "關鍵影格", "合成",
+             "表達式", "預合成", "軌道遮罩", "父級", "錨點"],
+    "遊戲": ["實況", "角色", "關卡", "地圖", "裝備", "技能", "副本",
+             "連段", "血量", "魔王", "攻略", "支線"],
+    "程式": ["Python", "函式", "變數", "參數", "迴圈", "字串", "陣列",
+             "編譯", "除錯", "套件", "終端機"],
+    "攝影": ["光圈", "快門", "ISO", "白平衡", "焦距", "景深",
+             "構圖", "曝光", "後製", "RAW"],
+}
+
+# 你這支/這批影片屬於哪些教學類型(可複選)。面板 UI 會做成勾選。
+VOCAB_CATEGORIES = ["剪輯"]
+
+# 你個人的額外術語(頻道名、人名、慣用詞…),補充在教學類型之外。
+CUSTOM_VOCAB = []
 
 # 提示詞(給辨識引擎的開場提示)。
 #   None = 自動用上面的 CUSTOM_VOCAB 組出一句(建議,平常只要改詞表就好)
@@ -127,3 +144,16 @@ try:
             globals()[_name] = getattr(_local, _name)
 except ImportError:
     pass
+
+# JSON 覆寫:Premiere 面板 UI 會把使用者調整的設定寫進 settings_local.json
+# (JSON 比 Python 安全好寫)。同樣只認全大寫鍵,且在 .py 覆寫之後套用。
+import os as _os, json as _json
+_json_path = _os.path.join(_os.path.dirname(__file__), "settings_local.json")
+if _os.path.exists(_json_path):
+    try:
+        with open(_json_path, "r", encoding="utf-8") as _f:
+            for _k, _v in _json.load(_f).items():
+                if _k.isupper():
+                    globals()[_k] = _v
+    except (ValueError, OSError):
+        pass
