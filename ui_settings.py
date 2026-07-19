@@ -39,7 +39,7 @@ import config.settings as cfg
 # 進階頁裡「預設折疊」的分組(基本頁的分組一律展開)
 # 註:降噪外掛(VST)刻意不折疊,讓使用者一眼看到降噪設定
 COLLAPSED_GROUPS = [
-    "冗詞與口頭禪", "字幕", "審閱標記", "其他微調",
+    "冗詞與口頭禪", "字幕", "審閱標記", "音樂/音效保護", "其他微調",
 ]
 
 FIELDS = [
@@ -82,6 +82,9 @@ FIELDS = [
      "tier": "common", "group": "剪輯", "min": 0.1, "max": 5, "step": 0.1,
      "default": 1.2, "soft": True,
      "hint": "兩句話中間停超過這個秒數,才會被當成要處理的停頓。講話慢的人調高一點"},
+    {"key": "MUSIC_DETECT", "label": "保護音樂/音效段", "type": "bool",
+     "tier": "common", "group": "剪輯",
+     "hint": "打勾:沒講話但有聲音的段落(預覽音樂、示範音效)會保留,不被當停頓剪掉或快轉"},
 
     # ================= 進階頁 =================
     # --- 分組:降噪外掛(VST)---
@@ -137,6 +140,16 @@ FIELDS = [
      "tier": "advanced", "group": "審閱標記", "min": 0, "max": 1, "step": 0.05,
      "default": 0.9,
      "hint": "0~1。只有把握度低於這個值的切點才下 marker;高把握度的必刪詞不用你看"},
+
+    # --- 分組:音樂/音效保護 ---
+    {"key": "MUSIC_DB_ABOVE_FLOOR", "label": "音樂偵測靈敏度", "type": "number",
+     "tier": "advanced", "group": "音樂/音效保護", "min": 3, "max": 30, "step": 1,
+     "default": 12.0, "soft": True,
+     "hint": "比環境底噪高幾分貝才算音樂。音樂被誤快轉→調小;呼吸聲被誤留→調大"},
+    {"key": "MUSIC_MIN_SEC", "label": "多短的聲響不算音樂", "type": "number",
+     "tier": "advanced", "group": "音樂/音效保護", "min": 0.1, "max": 3, "step": 0.1,
+     "default": 0.4, "soft": True,
+     "hint": "短於這個秒數的聲音(咳嗽、滑鼠聲)不會被當成音樂保護"},
 
     # --- 分組:其他微調 ---
     {"key": "SILENCE_PADDING_SEC", "label": "停頓前後的保護緩衝", "type": "number",

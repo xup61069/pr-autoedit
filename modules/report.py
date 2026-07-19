@@ -64,6 +64,27 @@ def generate(timeline: Timeline, words: list[Word],
     n_del = sum(1 for s in timeline.segments if s.action == "delete")
     n_spd = sum(1 for s in timeline.segments if s.action == "speed")
 
+    # 音樂/音效段(受保護,不剪不快轉)。時間碼是「原始影片」的位置,
+    # 方便對照來源影片確認偵測是否正確。
+    music_segs = [s for s in timeline.segments if s.reason == "music"]
+    music_frames = sum(s.duration for s in music_segs)
+    music_rows = "".join(
+        f"<tr><td class='tc'>{tc(s.start)} ~ {tc(s.end)}</td>"
+        f"<td>{s.duration / fps:.1f} 秒</td></tr>"
+        for s in music_segs)
+    music_html = f"""
+<h2 style="font-size:1.1rem;font-weight:500">音樂/音效段(已保護,不剪不快轉)</h2>
+<div class="summary">
+  下面 {len(music_segs)} 段沒有講話、但有聲音(音樂/音效/示範播放),
+  已自動保護、原封不動保留。時間碼是<b>原始影片</b>的位置,
+  可以對照原片確認有沒有抓錯:漏抓(音樂被快轉)就把設定裡的
+  「音樂偵測靈敏度」調小;誤抓(呼吸聲被當音樂)就調大。
+</div>
+<table>
+  <tr><th>原始影片位置</th><th>長度</th></tr>
+  {music_rows}
+</table>""" if music_segs else ""
+
     doc = f"""<!DOCTYPE html>
 <html lang="zh-Hant"><head><meta charset="utf-8">
 <title>剪輯審閱報告</title>
@@ -90,6 +111,7 @@ def generate(timeline: Timeline, words: list[Word],
   <div class="stat hi"><div class="num">{tc(saved_frames)}</div><div class="lbl">省下的時間({saved_pct:.0f}%)</div></div>
   <div class="stat"><div class="num">{tc(orig_frames)} → {tc(edited_frames)}</div><div class="lbl">原長 → 剪後</div></div>
   <div class="stat"><div class="num">{n_del} / {n_spd}</div><div class="lbl">刪除段 / 快轉段</div></div>
+  <div class="stat"><div class="num">{len(music_segs)}</div><div class="lbl">音樂/音效段(共 {tc(music_frames)},已保護)</div></div>
   <div class="stat"><div class="num">{n_review}</div><div class="lbl">需人工審閱的切點</div></div>
 </div>
 <div class="summary">
@@ -102,6 +124,7 @@ def generate(timeline: Timeline, words: list[Word],
       <th>前後文</th></tr>
   {''.join(rows)}
 </table>
+{music_html}
 </body></html>"""
 
     with open(out_html, "w", encoding="utf-8") as f:

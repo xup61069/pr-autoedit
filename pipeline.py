@@ -112,15 +112,24 @@ def main():
 
     total_frames = get_total_frames(args.video, fps)
 
+    # --- 2.5 音樂/音效偵測(用「原始」音訊,降噪後的檔音樂可能已被削掉)---
+    audible = []
+    if cfg.MUSIC_DETECT:
+        from modules.audio_probe import detect_audible_regions
+        probe_wav = raw_wav if os.path.exists(raw_wav) else clean_wav
+        if os.path.exists(probe_wav):
+            audible = detect_audible_regions(probe_wav, fps)
+
     # --- 3. 決策引擎 ---
     print("[3/5] 決策引擎")
-    segments = build_segments(words, fps, total_frames)
+    segments = build_segments(words, fps, total_frames, audible=audible)
     timeline = Timeline(fps=fps, source=os.path.abspath(clean_mp4),
                         segments=segments)
     timeline.to_json(os.path.join(work, "03_timeline.json"))
     n_del = sum(1 for s in segments if s.action == "delete")
     n_spd = sum(1 for s in segments if s.action == "speed")
-    print(f"  {len(segments)} 段:刪除 {n_del}、快轉 {n_spd}")
+    n_music = sum(1 for s in segments if s.reason == "music")
+    print(f"  {len(segments)} 段:刪除 {n_del}、快轉 {n_spd}、音樂保護 {n_music}")
 
     # --- 3.5 混回影片:視需要先把快轉段的聲音抹成無聲,再混音 ---
     from modules.audio_clean import gate_speed_audio, mux_back

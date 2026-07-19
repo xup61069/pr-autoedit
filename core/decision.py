@@ -30,11 +30,35 @@ def _is_isolated_or_repeated(words: list[Word], i: int) -> bool:
     return False
 
 
-def build_segments(words: list[Word], fps: float,
-                total_frames: int) -> list[Segment]:
+def _split_gap(start_f: int, end_f: int,
+               audible: list[tuple[int, int]]) -> list[tuple[int, int, str]]:
+    """把一段沒有詞的空隙,依「有聲區間」切成小段。
+    回傳 [(起, 迄, 種類), ...],種類是 "silence" 或 "music",完整覆蓋整個空隙。
+    audible 需已排序、彼此不重疊(audio_probe 的輸出天然如此)。"""
+    pieces: list[tuple[int, int, str]] = []
+    cursor = start_f
+    for a, b in audible:
+        a, b = max(a, start_f), min(b, end_f)
+        if b <= a or b <= cursor:
+            continue
+        if a > cursor:
+            pieces.append((cursor, a, "silence"))
+        pieces.append((max(a, cursor), b, "music"))
+        cursor = b
+    if cursor < end_f:
+        pieces.append((cursor, end_f, "silence"))
+    return pieces
+
+
+def build_segments(words: list[Word], fps: float, total_frames: int,
+                audible: list[tuple[int, int]] | None = None) -> list[Segment]:
     """
     主流程:掃過所有詞,產生連續的 Segment 清單。
     保證輸出的段落首尾相連、覆蓋整支影片(0 到 total_frames)。
+
+    audible:音訊能量偵測出的「有聲區間」(幀),見 modules/audio_probe。
+    詞與詞之間的空隙若跟有聲區間重疊,重疊部分視為音樂/音效段,
+    標成 keep + reason="music" 保護起來(不刪、不快轉)。
     """
     segments: list[Segment] = []
     cursor = 0                       # 目前處理到的原始幀位置
@@ -43,9 +67,7 @@ def build_segments(words: list[Word], fps: float,
         if end_f > start_f:
             segments.append(Segment(start_f, end_f, "keep"))
 
-    def emit_silence(start_f: int, end_f: int):
-        if end_f <= start_f:
-            return
+    def emit_silence_piece(start_f: int, end_f: int):
         if cfg.SILENCE_ACTION == "delete":
             segments.append(Segment(start_f, end_f, "delete",
                                     reason="silence", confidence=0.95))
@@ -53,6 +75,24 @@ def build_segments(words: list[Word], fps: float,
             segments.append(Segment(start_f, end_f, "speed",
                                     factor=cfg.SILENCE_SPEED_FACTOR,
                                     reason="silence", confidence=0.95))
+
+    def emit_silence(start_f: int, end_f: int):
+        if end_f <= start_f:
+            return
+        pieces = _split_gap(start_f, end_f, audible or [])
+        if len(pieces) == 1 and pieces[0][2] == "silence":
+            emit_silence_piece(start_f, end_f)   # 沒有音樂,維持原本行為
+            return
+        min_silence = round(cfg.SILENCE_THRESHOLD_SEC * fps)
+        for a, b, kind in pieces:
+            if kind == "music":
+                # 音樂/音效段:保護起來。信心 0.8 = 報告會提醒使用者確認
+                segments.append(Segment(a, b, "keep", reason="music",
+                                        confidence=0.8))
+            elif b - a >= min_silence:
+                emit_silence_piece(a, b)
+            else:
+                emit_keep(a, b)      # 音樂前後的短空隙,不值得剪,保留
 
     pad = round(cfg.SILENCE_PADDING_SEC * fps)
     silence_gap = cfg.SILENCE_THRESHOLD_SEC
