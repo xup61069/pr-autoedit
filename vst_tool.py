@@ -15,7 +15,7 @@ for _s in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-from modules.audio_clean import vst_state_path
+from modules.audio_clean import vst_state_path, _suppress_native_output
 
 
 def open_editor(vst_path: str) -> int:
@@ -68,8 +68,34 @@ def open_editor(vst_path: str) -> int:
     return 0
 
 
+def caps(vst_path: str) -> int:
+    """回報這個外掛的能力給面板(單行 JSON):有沒有可視介面、名稱。
+    面板用這個決定要不要顯示『調整』按鈕——沒有視窗介面的外掛(例如 VoiceFX)
+    就不顯示,改用面板上的降噪滑條。"""
+    import json
+    info = {"has_editor": False, "name": None, "ok": False}
+    if os.path.exists(vst_path):
+        try:
+            from pedalboard import load_plugin
+            import gc
+            # 載入/回收外掛時底層會狂吐除錯訊息,整段壓掉才不會污染要給面板讀的 JSON
+            with _suppress_native_output():
+                pl = load_plugin(vst_path)
+                info["has_editor"] = bool(getattr(pl, "has_editor", False))
+                info["name"] = getattr(pl, "name", None)
+                info["ok"] = True
+                del pl
+                gc.collect()
+        except Exception:
+            pass
+    print(json.dumps(info, ensure_ascii=False))
+    return 0
+
+
 if __name__ == "__main__":
     if len(sys.argv) >= 3 and sys.argv[1] == "open":
         sys.exit(open_editor(sys.argv[2]))
-    print('用法:python vst_tool.py open "<.vst3 完整路徑>"', file=sys.stderr)
+    if len(sys.argv) >= 3 and sys.argv[1] == "caps":
+        sys.exit(caps(sys.argv[2]))
+    print('用法:python vst_tool.py open|caps "<.vst3 完整路徑>"', file=sys.stderr)
     sys.exit(1)

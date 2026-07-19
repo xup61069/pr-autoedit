@@ -87,3 +87,39 @@ def insert_markers(xml_path: str, table: RemapTable, out_xml: str) -> str:
     tree.write(out_xml, encoding="UTF-8", xml_declaration=True)
     print(f"  插入 {len(cuts)} 個審閱 marker -> {out_xml}")
     return out_xml
+
+
+def mute_speed_audio_in_xml(xml_path: str, out_xml: str) -> str:
+    """把「快轉段」的音訊片段停用(enabled=FALSE),達到快轉時無聲。
+
+    為什麼這樣做:auto-editor 匯出的 XML 會在快轉片段上加「變速濾鏡」(timeremap),
+    Premiere 對聲音套變速會讓音調升高(花栗鼠聲)。與其靠抹掉來源聲音(在 Premiere
+    裡不一定蓋得準),不如直接把「帶變速濾鏡的音訊片段」關掉——沒有聲音片段就
+    絕對不會有聲音,且片段仍在(只是停用),你想聽回原聲隨時可重新啟用。
+
+    做法:凡是位於音軌、且自己含 timeremap 濾鏡的 clipitem,把它的 <enabled> 設為
+    FALSE。影片片段不動,所以畫面照樣快轉。"""
+    from lxml import etree
+
+    tree = etree.parse(xml_path)
+    root = tree.getroot()
+
+    muted = 0
+    for audio in root.findall(".//media/audio"):
+        for clip in audio.findall(".//clipitem"):
+            # 這個音訊片段自己有沒有掛變速濾鏡?
+            has_timeremap = any(
+                (eid.text or "").strip() == "timeremap"
+                for eid in clip.findall("./filter/effect/effectid")
+            )
+            if not has_timeremap:
+                continue
+            en = clip.find("enabled")
+            if en is None:
+                en = etree.SubElement(clip, "enabled")
+            en.text = "FALSE"
+            muted += 1
+
+    tree.write(out_xml, encoding="UTF-8", xml_declaration=True)
+    print(f"  快轉段消音:停用 {muted} 個快轉音訊片段 -> {out_xml}")
+    return out_xml

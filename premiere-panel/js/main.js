@@ -16,6 +16,8 @@
   var selectedVideo = null;
   var settingsData = null;   // ui_settings.py dump 的結果
   var controls = {};         // key -> 讀值函式
+  var fieldMeta = [];        // [{f, wrap, body}] 供 show_if 連動顯示用
+  var groupSections = [];    // [{sec, body}] 供隱藏整個空分組用
 
   var $ = function (id) { return document.getElementById(id); };
   function setStatus(t) { $("status").textContent = t; }
@@ -72,9 +74,82 @@
     $("formCommon").innerHTML = "";
     $("formAdvanced").innerHTML = "";
     controls = {};
+    fieldMeta = [];
+    groupSections = [];
+    var groupBody = {};       // "tier|group" -> body div(讓同組欄位歸到同一區塊)
+    var collapsed = settingsData.collapsed_groups || [];
+
     settingsData.fields.forEach(function (f) {
-      var el = controlFor(f, settingsData.values[f.key]);
-      (f.tier === "advanced" ? $("formAdvanced") : $("formCommon")).appendChild(el);
+      var container = (f.tier === "advanced") ? $("formAdvanced") : $("formCommon");
+      var gkey = f.tier + "|" + (f.group || "");
+      var body = groupBody[gkey];
+      if (!body) {
+        body = makeGroup(container, f.group || "", collapsed.indexOf(f.group) >= 0);
+        groupBody[gkey] = body;
+      }
+      var wrap = controlFor(f, settingsData.values[f.key]);
+      body.appendChild(wrap);
+      fieldMeta.push({ f: f, wrap: wrap });
+    });
+
+    // 任何欄位改動都重算「哪些欄位/分組該顯示」
+    [$("formCommon"), $("formAdvanced")].forEach(function (c) {
+      c.addEventListener("change", applyShowIf);
+      c.addEventListener("input", applyShowIf);
+    });
+    applyShowIf();
+  }
+
+  // 產生一個(可折疊的)分組區塊,回傳放欄位用的 body 元素
+  function makeGroup(container, name, startCollapsed) {
+    var sec = document.createElement("div");
+    sec.className = "group";
+    var body = document.createElement("div");
+    body.className = "groupBody";
+    if (name) {
+      var head = document.createElement("div");
+      head.className = "groupHead";
+      var tog = document.createElement("span");
+      tog.className = "groupToggle";
+      var title = document.createElement("span");
+      title.textContent = name;
+      head.appendChild(tog); head.appendChild(title);
+      function setOpen(open) {
+        body.style.display = open ? "block" : "none";
+        tog.textContent = open ? "▾" : "▸";
+        head.setAttribute("data-open", open ? "1" : "0");
+      }
+      head.addEventListener("click", function () {
+        setOpen(head.getAttribute("data-open") !== "1");
+      });
+      setOpen(!startCollapsed);
+      sec.appendChild(head);
+    }
+    sec.appendChild(body);
+    container.appendChild(sec);
+    groupSections.push({ sec: sec, body: body });
+    return body;
+  }
+
+  // 依 show_if 規則,決定每個欄位/分組是否顯示(隨相依欄位的值連動)
+  function applyShowIf() {
+    fieldMeta.forEach(function (m) {
+      var show = true;
+      var cond = m.f.show_if;
+      if (cond) {
+        Object.keys(cond).forEach(function (k) {
+          var cur = controls[k] ? controls[k]() : undefined;
+          if (cond[k].indexOf(cur) < 0) show = false;
+        });
+      }
+      m.wrap.style.display = show ? "" : "none";
+    });
+    // 整個分組的欄位都被藏起來時,連分組標題一起收掉
+    groupSections.forEach(function (g) {
+      var anyVisible = Array.prototype.some.call(g.body.children, function (ch) {
+        return ch.style.display !== "none";
+      });
+      g.sec.style.display = anyVisible ? "" : "none";
     });
   }
 
@@ -109,33 +184,38 @@
       range.type = "range";
       var num = document.createElement("input");
       num.type = "number";
-      [range, num].forEach(function (x) {
-        if (f.min !== undefined) x.min = f.min;
-        if (f.max !== undefined) x.max = f.max;
-        if (f.step !== undefined) x.step = f.step;
-      });
-      function clamp(v) {
+      // 滑條一律套上下限;數字框:soft 欄位不套上下限(可超出範圍手動輸入)
+      if (f.min !== undefined) { range.min = f.min; if (!f.soft) num.min = f.min; }
+      if (f.max !== undefined) { range.max = f.max; if (!f.soft) num.max = f.max; }
+      if (f.step !== undefined) { range.step = f.step; num.step = f.step; }
+      function clampNum(v) {
         v = parseFloat(v);
-        if (isNaN(v)) v = (f.min !== undefined ? f.min : 0);
-        if (f.min !== undefined && v < f.min) v = f.min;
-        if (f.max !== undefined && v > f.max) v = f.max;
+        if (isNaN(v)) v = (f.default !== undefined ? f.default
+                           : (f.min !== undefined ? f.min : 0));
+        if (!f.soft) {                       // 硬上下限才夾;soft 欄位放行
+          if (f.min !== undefined && v < f.min) v = f.min;
+          if (f.max !== undefined && v > f.max) v = f.max;
+        }
         return v;
       }
       range.value = value; num.value = value;
+      // 滑條拉動 -> 同步數字框;數字框輸入 -> 同步滑條(超出範圍時滑條自動停在端點)
       range.addEventListener("input", function () { num.value = range.value; });
       num.addEventListener("input", function () { range.value = num.value; });
       num.addEventListener("change", function () {
-        var c = clamp(num.value); num.value = c; range.value = c;
+        var c = clampNum(num.value); num.value = c; range.value = c;
       });
       // 點兩下恢復預設值
       if (f.default !== undefined) {
         var reset = function () { num.value = f.default; range.value = f.default; };
         range.addEventListener("dblclick", reset);
         num.addEventListener("dblclick", reset);
-        range.title = "點兩下恢復預設(" + f.default + ")";
+        range.title = "點兩下恢復預設(" + f.default + ")"
+          + (f.soft ? ";數字框可手動超出滑條範圍" : "");
+        num.title = range.title;
       }
       input.appendChild(range); input.appendChild(num);
-      controls[f.key] = function () { return clamp(num.value); };
+      controls[f.key] = function () { return clampNum(num.value); };
 
     } else if (f.type === "combo") {
       input = document.createElement("input");
@@ -173,7 +253,18 @@
           var adj = document.createElement("button");
           adj.className = "btn small ghost"; adj.textContent = "調整";
           adj.title = "打開這個外掛的介面調參數";
+          adj.style.display = "none"; // 先藏起來,確認外掛真的有視窗介面才顯示
           adj.addEventListener("click", function () { openVst(paths[i]); });
+          // 問這個外掛有沒有視窗介面:有才顯示「調整」;沒有(如 VoiceFX)就提示改用滑條
+          if (p && p.trim()) {
+            probeVstCaps(p.trim(), function (caps) {
+              if (caps && caps.has_editor) {
+                adj.style.display = "";
+              } else if (caps && caps.ok) {
+                pi.title = "這個外掛沒有視窗介面,請用下方「降噪:消除什麼 / 強度」調整";
+              }
+            });
+          }
           var del = document.createElement("button");
           del.className = "btn small ghost"; del.textContent = "✕";
           del.addEventListener("click", function () { paths.splice(i, 1); renderRows(); });
@@ -250,6 +341,24 @@
   $("save").addEventListener("click", function () { saveSettings(null, "saveMsg"); });
   $("save2").addEventListener("click", function () { saveSettings(null, "saveMsg2"); });
 
+  // ---------- 問外掛有沒有視窗介面(決定要不要顯示「調整」鈕) ----------
+  var vstCapsCache = {}; // 路徑 -> caps,同一路徑只問一次
+  function probeVstCaps(p, cb) {
+    if (vstCapsCache[p]) { cb(vstCapsCache[p]); return; }
+    var out = "";
+    try {
+      var proc = cp.spawn(PYTHON, ["vst_tool.py", "caps", p], { cwd: PROJECT_DIR });
+      proc.stdout.on("data", function (d) { out += d.toString(); });
+      proc.on("error", function () { cb(null); });
+      proc.on("close", function () {
+        var caps = null;
+        try { caps = JSON.parse(out.trim().split(/\r?\n/).pop()); } catch (e) {}
+        if (caps) vstCapsCache[p] = caps;
+        cb(caps);
+      });
+    } catch (e) { cb(null); }
+  }
+
   // ---------- 打開 VST 外掛介面調參數 ----------
   function openVst(p) {
     var msg = $("saveMsg2");
@@ -261,7 +370,9 @@
     proc.stderr.on("data", function (d) { appendLog(d.toString()); });
     proc.on("error", function (e) { say("無法啟動:" + e.message, false); });
     proc.on("close", function (code) {
-      say(code === 0 ? "VST 參數已儲存 ✓,下次剪輯自動套用" : "調整結束(代碼 " + code + ",見下方訊息)", code === 0);
+      if (code === 0) { say("VST 參數已儲存 ✓,下次剪輯自動套用", true); }
+      else if (code === 2) { say("這個外掛沒有視窗介面,請改用下方「降噪:消除什麼 / 強度」調整", false); }
+      else { say("調整結束(代碼 " + code + ",見下方訊息)", false); }
     });
   }
 

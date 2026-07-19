@@ -122,8 +122,9 @@ def _transcribe_funasr(audio_path: str) -> list[Word]:
     from funasr import AutoModel
     global _funasr_model
     if _funasr_model is None:
-        print("  載入 FunASR/Paraformer 模型(首次會下載約 2GB)...")
-        _funasr_model = AutoModel(model="paraformer-zh", vad_model="fsmn-vad",
+        model_name = getattr(cfg, "FUNASR_MODEL", "paraformer-zh")
+        print(f"  載入 FunASR 模型 {model_name}(首次會下載約 2GB)...")
+        _funasr_model = AutoModel(model=model_name, vad_model="fsmn-vad",
                                   disable_update=True, log_level="ERROR")
 
     hotword = " ".join(effective_vocab())

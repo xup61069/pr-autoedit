@@ -17,6 +17,35 @@ import subprocess, os, sys, contextlib, hashlib
 import config.settings as cfg
 
 
+# VoiceFX 的「消除模式」白話 → 外掛實際吃的英文值。中英都收,容錯。
+_VOICEFX_MODE_MAP = {
+    "消噪音": "Noise", "消回音": "Echo", "兩者都消": "Both",
+    "Noise": "Noise", "Echo": "Echo", "Both": "Both",
+}
+
+
+def apply_voicefx_params(plugin) -> None:
+    """把面板調的降噪參數(模式 + 強度)套到外掛上。
+
+    只在外掛真的有 mode_removal / intensity 這兩個參數時才動手(就是 VoiceFX
+    這類 NVIDIA 降噪外掛);其他外掛沒有這兩個參數,整段自動略過、不影響。
+    這樣就不必開那個 VoiceFX 開不出來的 GUI 視窗。"""
+    params = getattr(plugin, "parameters", {}) or {}
+    if "mode_removal" in params:
+        mode = _VOICEFX_MODE_MAP.get(getattr(cfg, "VOICEFX_MODE", "消噪音"))
+        if mode:
+            try:
+                plugin.mode_removal = mode
+            except Exception:
+                pass
+    if "intensity" in params:
+        try:
+            val = float(getattr(cfg, "VOICEFX_INTENSITY", 100.0))
+            plugin.intensity = max(0.0, min(100.0, val))
+        except Exception:
+            pass
+
+
 def vst_state_path(vst_path: str) -> str:
     """某個 VST 外掛「調好的參數」存放路徑(用路徑雜湊當檔名)。
     使用者在面板按『開啟調整』調好參數後存這裡,載入外掛時自動套用。"""
@@ -74,7 +103,7 @@ def clean_vst(in_wav: str, out_wav: str) -> str:
         plugins = []
         for p in cfg.VST_CHAIN:
             pl = load_plugin(p)
-            # 若使用者在面板調過這個外掛的參數,套用存下來的狀態
+            # 若使用者在面板用 GUI 調過這個外掛,先套用存下來的整體狀態
             sp = vst_state_path(p)
             if os.path.exists(sp):
                 try:
@@ -82,6 +111,8 @@ def clean_vst(in_wav: str, out_wav: str) -> str:
                         pl.raw_state = _f.read()
                 except Exception:
                     pass
+            # 再套用面板滑條調的降噪參數(VoiceFX);排在 raw_state 之後,面板值優先
+            apply_voicefx_params(pl)
             plugins.append(pl)
         board = Pedalboard(plugins)
 

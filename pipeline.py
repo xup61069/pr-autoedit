@@ -135,14 +135,19 @@ def main():
 
     # --- 4. 審閱模式產物:XML + marker + 字幕 + 報告 ---
     print("[4/5] 產生審閱檔案")
-    from modules.premiere_xml import build_v1_timeline, export_premiere_xml, insert_markers
+    from modules.premiere_xml import (build_v1_timeline, export_premiere_xml,
+                                       insert_markers, mute_speed_audio_in_xml)
     from modules.subtitles import write_srt
     from modules.report import generate as gen_report
 
     v1 = build_v1_timeline(timeline, os.path.join(work, "03_timeline.v1.json"))
+    final_xml = os.path.join(work, "04_project.xml")
     try:
         raw_xml = export_premiere_xml(v1, os.path.join(work, "04_project_raw.xml"))
-        insert_markers(raw_xml, table, os.path.join(work, "04_project.xml"))
+        insert_markers(raw_xml, table, final_xml)
+        # 快轉段消音:把帶變速濾鏡的音訊片段停用(最可靠,見 mute_speed_audio_in_xml)
+        if cfg.MUTE_SPEED_AUDIO and any(s.action == "speed" for s in segments):
+            mute_speed_audio_in_xml(final_xml, final_xml)
     except (FileNotFoundError, subprocess.CalledProcessError) as e:
         print(f"  (auto-editor 尚未安裝或執行失敗,略過 XML:{e})")
 

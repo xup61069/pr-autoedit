@@ -88,6 +88,18 @@ h1 {
 }
 .adv-head:hover { color: #ddd; }
 
+/* 設定分組(可折疊的小節) */
+.group { margin: 4px 0 10px; }
+.groupHead {
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  user-select: none; padding: 5px 2px; margin-top: 6px;
+  font-size: 12px; font-weight: 600; color: #cfcfcf;
+  border-bottom: 1px solid #3a3a3a;
+}
+.groupHead:hover { color: #fff; }
+.groupToggle { color: #888; font-size: 11px; width: 12px; }
+.groupBody { padding: 2px 0 0 4px; }
+
 /* 表單控制項 */
 .field { margin: 8px 0; }
 .field > label { display: block; font-size: 12px; color: #cfcfcf; margin-bottom: 3px; }

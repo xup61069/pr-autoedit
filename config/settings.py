@@ -69,6 +69,9 @@ MARKER_MAX_CONFIDENCE = 0.9
 # 輸出一樣的 list[Word] 即可,其餘管線完全不用動。
 ASR_ENGINE = "faster-whisper"
 
+# --- FunASR 專用參數(ASR_ENGINE="funasr" 時生效)---
+FUNASR_MODEL = "paraformer-zh"   # 目前支援 paraformer-zh(純中文較準)
+
 # --- Whisper 專用參數(ASR_ENGINE="faster-whisper" 時生效)---
 WHISPER_MODEL = "large-v3"       # 準確度優先;GPU 不夠力可改 "medium"
 WHISPER_LANGUAGE = "zh"
@@ -120,6 +123,13 @@ VST_CHAIN = [
     r"C:\Program Files\Common Files\VST3\TonPlugIns\VoiceFX.vst3\Contents\x86_64-win\VoiceFX.vst3",
     # 之後想加 EQ / 壓縮,再把 .vst3 路徑接在這後面
 ]
+
+# VoiceFX(NVIDIA AI 降噪)的兩個參數,直接用面板滑條/下拉控制,不必開外掛視窗。
+# 只有當 VST_CHAIN 裡有 VoiceFX 這類外掛時才有作用;其他外掛沒有這兩個參數會自動略過。
+#   VOICEFX_MODE      要消除什麼:"消噪音" / "消回音" / "兩者都消"
+#   VOICEFX_INTENSITY 降噪強度 0~100(越大清得越乾淨,但太大可能讓人聲失真)
+VOICEFX_MODE = "消噪音"
+VOICEFX_INTENSITY = 100.0
 
 # 目標響度(YouTube 標準)
 TARGET_LUFS = -14.0
