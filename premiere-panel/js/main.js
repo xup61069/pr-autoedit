@@ -16,13 +16,35 @@
   var selectedVideo = null;
   var settingsData = null;   // ui_settings.py dump 的結果
   var controls = {};         // key -> 讀值函式
-  var fieldMeta = [];        // [{f, wrap, body}] 供 show_if 連動顯示用
+  var fieldMeta = [];        // [{f, wrap}] 供 show_if 連動顯示用
   var groupSections = [];    // [{sec, body}] 供隱藏整個空分組用
   var lastVideo = null;      // 最近一次成功處理的影片(剪輯後工具用)
 
   var $ = function (id) { return document.getElementById(id); };
-  function setStatus(t) { $("status").textContent = t; }
-  function appendLog(t) { $("log").textContent += t; $("log").scrollTop = $("log").scrollHeight; }
+
+  // 狀態列:文字 + 顏色(busy=黃、ok=綠、err=紅,不給 kind 就是預設藍)
+  function setStatus(t, kind) {
+    $("status").textContent = t;
+    $("status").className = "status" + (kind ? " " + kind : "");
+  }
+
+  // log:一行一行加進去,錯誤行標紅、完成行標綠,掃一眼就找得到重點
+  var LOG_ERR_RE = /(Traceback|Error|錯誤|失敗|找不到|⚠)/;
+  var LOG_OK_RE = /(✓|完成)/;
+  function appendLog(t) {
+    var log = $("log");
+    var lines = String(t).split(/\r?\n/);
+    for (var i = 0; i < lines.length; i++) {
+      if (i > 0) log.appendChild(document.createTextNode("\n"));
+      if (!lines[i]) continue;
+      var span = document.createElement("span");
+      if (LOG_ERR_RE.test(lines[i])) span.className = "lg-err";
+      else if (LOG_OK_RE.test(lines[i])) span.className = "lg-ok";
+      span.textContent = lines[i];
+      log.appendChild(span);
+    }
+    log.scrollTop = log.scrollHeight;
+  }
   function toFwd(p) { return String(p).replace(/\\/g, "/"); }
 
   // ---------- 頁面切換 ----------
@@ -387,7 +409,7 @@
     $("run").disabled = true;
     $("pick").disabled = true;
     $("log").textContent = "";
-    setStatus("處理中,請稍候…(第一次會下載模型,較久)");
+    setStatus("處理中,請稍候…(第一次會下載模型,較久)", "busy");
     appendLog("▶ 已啟動,正在載入程式與模型…(下面沒動靜是正常的,請稍候)\n");
 
     var name = path.basename(selectedVideo, path.extname(selectedVideo));
@@ -397,19 +419,19 @@
     proc.stdout.on("data", function (d) { appendLog(d.toString()); });
     proc.stderr.on("data", function (d) { appendLog(d.toString()); });
     proc.on("error", function (e) {
-      setStatus("無法啟動 Python:" + e.message + "(檢查 main.js 的 PYTHON / PROJECT_DIR)");
+      setStatus("無法啟動 Python:" + e.message + "(檢查 main.js 的 PYTHON / PROJECT_DIR)", "err");
       $("run").disabled = false; $("pick").disabled = false;
     });
     proc.on("close", function (code) {
       $("pick").disabled = false;
-      if (code !== 0) { setStatus("處理失敗(代碼 " + code + "),請看下方訊息"); $("run").disabled = false; return; }
-      setStatus("剪輯完成,正在匯入 Premiere…");
+      if (code !== 0) { setStatus("處理失敗(代碼 " + code + "),請看下方訊息", "err"); $("run").disabled = false; return; }
+      setStatus("剪輯完成,正在匯入 Premiere…", "busy");
       var outDir = path.join(PROJECT_DIR, "output", name);
       var xml = toFwd(path.join(outDir, "04_project.xml"));
       var srt = toFwd(path.join(outDir, "04_subtitles.srt"));
       cs.evalScript('prImportEditedProject("' + xml + '","' + srt + '")', function (r) {
-        if (r && r.indexOf("OK") === 0) setStatus("完成 ✓ 已匯入序列與字幕;想調靈敏度→改設定→按「重算剪輯」");
-        else setStatus("Python 跑完了,但匯入時出錯:" + r);
+        if (r && r.indexOf("OK") === 0) setStatus("完成 ✓ 已匯入序列與字幕;下方「剪輯後工具」可開報告、調整重算", "ok");
+        else setStatus("Python 跑完了,但匯入時出錯:" + r, "err");
         $("run").disabled = false;
         rememberVideo(selectedVideo);
       });
@@ -431,13 +453,17 @@
     lastVideo = video;
     try { window.localStorage.setItem("pr_last_video", video); } catch (e) {}
     $("afterSec").style.display = "block";
+    $("afterVideo").textContent = "目前影片:" + path.basename(video);
   }
   (function restoreLast() {
     var v = null;
     try { v = window.localStorage.getItem("pr_last_video"); } catch (e) {}
     if (v && fs.existsSync(v) && fs.existsSync(outDirOf(v))) {
-      lastVideo = v;
-      $("afterSec").style.display = "block";
+      rememberVideo(v);
+      // 順便接續上次的選擇:重開面板不用重選,直接就能重跑或用剪輯後工具
+      selectedVideo = v;
+      $("videoPath").textContent = v + "(上次處理的影片,可直接用)";
+      $("run").disabled = false;
     }
   })();
 
@@ -455,10 +481,26 @@
     m.style.color = ok ? "#2e8b57" : "#e06c6c";
   }
   function setAfterButtons(enabled) {
-    ["rebuild", "applyVst", "subsFromSeq"].forEach(function (id) {
+    ["openReport", "rebuild", "applyVst", "subsFromSeq"].forEach(function (id) {
       $(id).disabled = !enabled;
     });
   }
+
+  // ---------- 開啟審閱報告(用系統預設瀏覽器) ----------
+  $("openReport").addEventListener("click", function () {
+    if (!lastVideo) return;
+    var report = path.join(outDirOf(lastVideo), "04_report.html");
+    if (!fs.existsSync(report)) {
+      afterSay("找不到報告檔(要先跑過一次剪輯)", false);
+      return;
+    }
+    try {
+      cp.spawn("cmd", ["/c", "start", "", report], { windowsHide: true });
+      afterSay("已在瀏覽器開啟報告 ✓", true);
+    } catch (e) {
+      afterSay("開啟失敗:" + e.message, false);
+    }
+  });
 
   // ---------- P3:重算剪輯(快)→ 匯入新序列 ----------
   $("rebuild").addEventListener("click", function () {

@@ -50,19 +50,26 @@ h1 {
   border-left: 3px solid #2d6cdf;
   font-size: 12px;
 }
+/* 狀態列依情況變色:黃=處理中、綠=成功、紅=出錯,一眼看懂 */
+.status.busy { border-left-color: #d9a441; }
+.status.ok   { border-left-color: #2e8b57; }
+.status.err  { border-left-color: #d9534f; }
 .log {
   background: #1a1a1a;
   color: #b5b5b5;
   font-size: 11px;
-  line-height: 1.5;
+  line-height: 1.55;
   padding: 8px;
   border-radius: 5px;
-  height: 150px;
+  height: 170px;
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-all;
   margin: 0;
 }
+/* log 內的行依內容上色:紅=錯誤、綠=完成,掃一眼就找得到重點 */
+.lg-err { color: #e08c8c; }
+.lg-ok  { color: #7fc98f; }
 .hint {
   font-size: 11px;
   color: #888;
@@ -82,11 +89,6 @@ h1 {
 .section-body { padding: 8px 10px; }
 .btn.small { padding: 6px 10px; font-size: 12px; margin: 8px 0 0; width: auto; }
 .savemsg { font-size: 11px; color: #2e8b57; margin-left: 8px; }
-.adv-head {
-  font-size: 12px; color: #aaa; cursor: pointer; user-select: none;
-  padding: 6px 0; margin-top: 4px; border-top: 1px solid #333;
-}
-.adv-head:hover { color: #ddd; }
 
 /* 設定分組(可折疊的小節) */
 .group { margin: 4px 0 10px; }

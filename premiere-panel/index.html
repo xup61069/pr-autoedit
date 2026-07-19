@@ -16,7 +16,7 @@
     <!-- 設定區(常用) -->
     <div class="section">
       <div class="section-head" id="settingsHead">
-        <span>⚙ 設定</span><span id="settingsToggle" class="chev">▸</span>
+        <span>⚙ 設定(用預設就能跑,想調再展開)</span><span id="settingsToggle" class="chev">▸</span>
       </div>
       <div id="settingsBody" class="section-body" style="display:none">
         <div id="formCommon" class="form"></div>
@@ -39,6 +39,10 @@
         <span>3. 剪輯後工具(隨時可用)</span><span id="afterToggle" class="chev">▾</span>
       </div>
       <div id="afterBody" class="section-body">
+        <div id="afterVideo" class="path" style="margin:0 0 6px"></div>
+        <button id="openReport" class="btn">開啟審閱報告</button>
+        <div class="hint">在瀏覽器打開這次剪輯的報告:哪裡被剪、哪裡被快轉、
+          省了多少時間,一分鐘掃完。覺得剪不對再回來調設定。</div>
         <button id="rebuild" class="btn">重算剪輯 → 匯入新序列</button>
         <div class="hint">改了任何設定(交付方式、停頓處理、快轉倍率…)後按這顆:
           用新設定重算(幾秒,不重跑辨識)並匯入一個新序列。舊序列不會動,隨時可反悔。</div>
@@ -55,9 +59,7 @@
 
     <div class="hint">
       完成後會自動把序列與字幕匯入 Premiere。剪的太兇或太保守?
-      改設定(停頓門檻、快轉倍率…)→ 按「重算剪輯」,幾秒出一個新序列,
-      舊的不會動。若選 live 交付:片段全保留,粉紅=靜音、青綠=音樂、紫=冗詞,
-      「標籤 &gt; 選取標籤群組」可批次處理。
+      改「⚙ 設定」→ 按「重算剪輯」,幾秒出一個新序列,舊的不會動。
     </div>
   </div>
 
