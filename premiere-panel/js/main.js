@@ -127,8 +127,28 @@
       num.addEventListener("change", function () {
         var c = clamp(num.value); num.value = c; range.value = c;
       });
+      // 點兩下恢復預設值
+      if (f.default !== undefined) {
+        var reset = function () { num.value = f.default; range.value = f.default; };
+        range.addEventListener("dblclick", reset);
+        num.addEventListener("dblclick", reset);
+        range.title = "點兩下恢復預設(" + f.default + ")";
+      }
       input.appendChild(range); input.appendChild(num);
       controls[f.key] = function () { return clamp(num.value); };
+
+    } else if (f.type === "combo") {
+      input = document.createElement("input");
+      input.type = "text";
+      input.setAttribute("list", "dl_" + f.key);
+      input.value = value;
+      var dl = document.createElement("datalist");
+      dl.id = "dl_" + f.key;
+      (f.options || []).forEach(function (o) {
+        var op = document.createElement("option"); op.value = o; dl.appendChild(op);
+      });
+      wrap.appendChild(dl);
+      controls[f.key] = function () { return input.value.trim(); };
 
     } else if (f.type === "list") {
       input = document.createElement("input");
@@ -140,11 +160,34 @@
       };
 
     } else if (f.type === "vstlist") {
-      input = document.createElement("textarea");
-      input.value = (value || []).join("\n");
-      input.placeholder = "一行一個 .vst3 完整路徑";
+      input = document.createElement("div");
+      var paths = (value || []).slice();
+      function renderRows() {
+        input.innerHTML = "";
+        paths.forEach(function (p, i) {
+          var row = document.createElement("div");
+          row.className = "vstrow";
+          var pi = document.createElement("input");
+          pi.type = "text"; pi.value = p; pi.placeholder = ".vst3 完整路徑";
+          pi.addEventListener("input", function () { paths[i] = pi.value; });
+          var adj = document.createElement("button");
+          adj.className = "btn small ghost"; adj.textContent = "調整";
+          adj.title = "打開這個外掛的介面調參數";
+          adj.addEventListener("click", function () { openVst(paths[i]); });
+          var del = document.createElement("button");
+          del.className = "btn small ghost"; del.textContent = "✕";
+          del.addEventListener("click", function () { paths.splice(i, 1); renderRows(); });
+          row.appendChild(pi); row.appendChild(adj); row.appendChild(del);
+          input.appendChild(row);
+        });
+        var add = document.createElement("button");
+        add.className = "btn small ghost"; add.textContent = "+ 新增外掛";
+        add.addEventListener("click", function () { paths.push(""); renderRows(); });
+        input.appendChild(add);
+      }
+      renderRows();
       controls[f.key] = function () {
-        return input.value.split("\n").map(function (s) { return s.trim(); })
+        return paths.map(function (s) { return String(s).trim(); })
           .filter(function (s) { return s; });
       };
 
@@ -206,6 +249,21 @@
   }
   $("save").addEventListener("click", function () { saveSettings(null, "saveMsg"); });
   $("save2").addEventListener("click", function () { saveSettings(null, "saveMsg2"); });
+
+  // ---------- 打開 VST 外掛介面調參數 ----------
+  function openVst(p) {
+    var msg = $("saveMsg2");
+    function say(t, ok) { if (msg) { msg.textContent = t; msg.style.color = ok ? "#2e8b57" : "#e06c6c"; } }
+    if (!p || !p.trim()) { say("請先填 .vst3 路徑", false); return; }
+    say("外掛介面開啟中…調整後關閉那個視窗即會儲存", true);
+    var proc = cp.spawn(PYTHON, ["vst_tool.py", "open", p.trim()], { cwd: PROJECT_DIR });
+    proc.stdout.on("data", function (d) { appendLog(d.toString()); });
+    proc.stderr.on("data", function (d) { appendLog(d.toString()); });
+    proc.on("error", function (e) { say("無法啟動:" + e.message, false); });
+    proc.on("close", function (code) {
+      say(code === 0 ? "VST 參數已儲存 ✓,下次剪輯自動套用" : "調整結束(代碼 " + code + ",見下方訊息)", code === 0);
+    });
+  }
 
   // ---------- 一鍵自動剪輯 ----------
   $("run").addEventListener("click", function () {

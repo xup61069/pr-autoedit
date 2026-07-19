@@ -34,7 +34,7 @@
         </Lifecycle>
         <UI>
           <Type>Panel</Type>
-          <Menu>PR 自動剪輯</Menu>
+          <Menu>PR剪教學一條龍</Menu>
           <Geometry>
             <Size><Height>460</Height><Width>340</Width></Size>
           </Geometry>

@@ -83,9 +83,12 @@ def _transcribe_faster_whisper(audio_path: str) -> list[Word]:
     )
 
     print("  轉錄中...")
+    lang = getattr(cfg, "WHISPER_LANGUAGE", "zh")
+    if lang in ("auto", "", None):          # auto/空白 -> 交給 Whisper 自動偵測
+        lang = None
     segments, info = model.transcribe(
         audio_path,
-        language=cfg.WHISPER_LANGUAGE,
+        language=lang,
         word_timestamps=True,               # 關鍵:要詞級時間戳
         initial_prompt=_build_initial_prompt(),
         vad_filter=True,                    # 內建語音活動偵測,幫忙找靜音

@@ -122,3 +122,8 @@ h1 {
 .numrow { display: flex; align-items: center; gap: 8px; }
 .numrow input[type="range"] { flex: 1; min-width: 60px; accent-color: #2d6cdf; }
 .numrow input[type="number"] { width: 66px; flex: none; text-align: right; }
+
+/* VST 外掛列 */
+.vstrow { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+.vstrow input[type="text"] { flex: 1; min-width: 0; }
+.vstrow .btn.small { margin: 0; padding: 5px 9px; white-space: nowrap; }

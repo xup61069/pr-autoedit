@@ -38,3 +38,5 @@ Thumbs.db
 # 個人設定覆寫(不進版控,保留你自己的門檻/詞表/VST 路徑)
 config/settings_local.py
 config/settings_local.json
+# VST 調好的參數狀態(個人、二進位,不進版控)
+config/vst_state/

@@ -13,8 +13,16 @@
 """
 
 from __future__ import annotations
-import subprocess, os, sys, contextlib
+import subprocess, os, sys, contextlib, hashlib
 import config.settings as cfg
+
+
+def vst_state_path(vst_path: str) -> str:
+    """某個 VST 外掛「調好的參數」存放路徑(用路徑雜湊當檔名)。
+    使用者在面板按『開啟調整』調好參數後存這裡,載入外掛時自動套用。"""
+    h = hashlib.md5(vst_path.encode("utf-8")).hexdigest()[:16]
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(root, "config", "vst_state", h + ".bin")
 
 
 @contextlib.contextmanager
@@ -63,7 +71,18 @@ def clean_vst(in_wav: str, out_wav: str) -> str:
     print(f"  載入 {len(cfg.VST_CHAIN)} 個 VST 外掛並處理...")
     # 外掛載入與處理都包在 _suppress_native_output 裡,壓掉底層除錯訊息
     with _suppress_native_output():
-        plugins = [load_plugin(p) for p in cfg.VST_CHAIN]
+        plugins = []
+        for p in cfg.VST_CHAIN:
+            pl = load_plugin(p)
+            # 若使用者在面板調過這個外掛的參數,套用存下來的狀態
+            sp = vst_state_path(p)
+            if os.path.exists(sp):
+                try:
+                    with open(sp, "rb") as _f:
+                        pl.raw_state = _f.read()
+                except Exception:
+                    pass
+            plugins.append(pl)
         board = Pedalboard(plugins)
 
         with AudioFile(in_wav) as f:
