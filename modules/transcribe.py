@@ -19,13 +19,39 @@ import json
 import os
 
 
+def _asr_fingerprint() -> dict:
+    """目前「會影響辨識結果」的設定組合。
+
+    快取檔會記下轉錄當時的組合;之後任何一項變了(例如引擎從 funasr
+    切回 whisper、換模型、改教學類型詞庫),就自動重新轉錄——
+    不會再拿舊引擎的結果充數(這曾造成「切了引擎但字幕沒變」)。"""
+    engine = getattr(cfg, "ASR_ENGINE", "faster-whisper")
+    if engine == "faster-whisper":
+        return {"engine": engine,
+                "model": getattr(cfg, "WHISPER_MODEL", ""),
+                "language": getattr(cfg, "WHISPER_LANGUAGE", "zh"),
+                "prompt": _build_initial_prompt()}
+    return {"engine": engine,
+            "model": getattr(cfg, "FUNASR_MODEL", "paraformer-zh"),
+            "hotword": " ".join(effective_vocab())}
+
+
 def transcribe(audio_path: str, cache_json: str | None = None) -> list[Word]:
     """對音訊做詞級轉錄。
-    若提供 cache_json 且檔案存在,直接讀快取(省下重複轉錄的時間;
-    想改用新引擎或新提示詞重轉,刪掉該快取檔即可)。"""
+    若提供 cache_json 且檔案存在、且當時的辨識設定跟現在一致,
+    直接讀快取(省下重複轉錄的時間);設定變了就自動重轉。"""
+    fp = _asr_fingerprint()
     if cache_json and os.path.exists(cache_json):
-        print(f"  讀取轉錄快取:{cache_json}")
-        return _load_cache(cache_json)
+        try:
+            with open(cache_json, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+        except (ValueError, OSError):
+            raw = None
+        if isinstance(raw, dict) and raw.get("fingerprint") == fp:
+            print(f"  讀取轉錄快取:{cache_json}")
+            return [Word(**d) for d in raw.get("words", [])]
+        if raw is not None:
+            print("  辨識設定已變更(引擎/模型/語言/詞庫),重新轉錄…")
 
     engine = getattr(cfg, "ASR_ENGINE", "faster-whisper")
     if engine == "faster-whisper":
@@ -155,12 +181,21 @@ def _transcribe_funasr(audio_path: str) -> list[Word]:
 
 
 def _save_cache(words: list[Word], path: str) -> None:
-    data = [{"text": w.text, "start": w.start, "end": w.end} for w in words]
+    data = {
+        "fingerprint": _asr_fingerprint(),   # 記下這批詞是用什麼設定轉的
+        "words": [{"text": w.text, "start": w.start, "end": w.end}
+                  for w in words],
+    }
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def _load_cache(path: str) -> list[Word]:
+def load_cached_words(path: str) -> list[Word]:
+    """讀快取裡的詞(不管當時用什麼引擎轉的;新舊兩種快取格式都吃)。
+    給 live_subs 這類「後段工具」用——它們要的是『當初剪輯時用的那批詞』,
+    跟現在面板選什麼引擎無關。"""
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
+    if isinstance(data, dict):
+        data = data.get("words", [])
     return [Word(**d) for d in data]

@@ -25,7 +25,7 @@ for _s in (sys.stdout, sys.stderr):
 
 from core.models import Timeline
 from core.remap import RemapTable
-from modules.transcribe import _load_cache
+from modules.transcribe import load_cached_words
 from modules.subtitles import write_srt
 import config.settings as cfg
 
@@ -47,7 +47,7 @@ def build_from_layout(layout_json: str, work_dir: str) -> str:
                              "「用目前序列產生字幕」只能用在本工具處理過的影片,"
                              "且序列裡的素材要是它產生的那份。")
     fps = Timeline.from_json(tl_path).fps
-    words = _load_cache(tr_path)
+    words = load_cached_words(tr_path)
 
     # 序列版面 -> 映射表:(原始起幀, 原始迄幀, 時間軸起幀, 速度)
     spans = []
