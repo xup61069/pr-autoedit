@@ -2,8 +2,8 @@
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.models import Word
-from core.decision import build_segments
+from core.models import Word, Segment
+from core.decision import build_segments, trim_quiet_inside
 import config.settings as cfg
 
 # 測試以「預設參數」為前提;使用者面板存的 settings_local 覆寫
@@ -15,6 +15,8 @@ cfg.SILENCE_SPEED_FACTOR = 6.0
 cfg.FILLERS_ALWAYS = ["嗯", "呃", "啊", "欸", "唉", "痾", "喔"]
 cfg.FILLERS_CONDITIONAL = ["就是", "然後", "那個", "這個", "所以說", "對對對"]
 cfg.CONDITIONAL_CONFIDENCE = 0.6
+cfg.FILLER_PAUSE_SEC = 0.0          # 預設:不要求停頓(Whisper 用)
+cfg.FILLER_ISOLATED_GAP_SEC = 0.25
 
 
 def test_always_filler_deleted():
@@ -32,7 +34,11 @@ def test_always_filler_deleted():
 
 
 def test_embedded_char_kept():
-    """黏在語流中/句尾的字不當語氣詞(FunASR 逐字輸出的「好啊」保護)"""
+    """黏在語流中/句尾的字不當語氣詞(FunASR 逐字輸出的「好啊」保護)。
+
+    這個保護由 FILLER_PAUSE_SEC 控制,預設 0(不要求停頓、剪最兇);
+    用 funasr 時要設 0.1 才會啟動,所以這裡明確設定它來測這個功能。"""
+    cfg.FILLER_PAUSE_SEC = 0.1
     # 情境 1:句中緊貼(好「啊」那我們)
     words = [
         Word("好", 0.0, 0.3),
@@ -52,7 +58,22 @@ def test_embedded_char_kept():
     segs = build_segments(words, fps=30, total_frames=90)
     deletes = [s for s in segs if s.action == "delete"]
     assert not any(s.text == "啊" for s in deletes), "句尾的『啊』不該被刪"
-    print("  ✓ 句中/句尾黏著的『啊』被保留(逐字引擎保護)")
+    cfg.FILLER_PAUSE_SEC = 0.0          # 還原,不影響其他測試
+    print("  ✓ 句中/句尾黏著的『啊』被保留(FILLER_PAUSE_SEC=0.1 時)")
+
+
+def test_filler_deleted_without_pause_requirement():
+    """FILLER_PAUSE_SEC=0(預設):語氣詞黏在句子裡也照刪(Whisper 用,剪最兇)"""
+    words = [
+        Word("好", 0.0, 0.3),
+        Word("嗯", 0.3, 0.5),            # 前後零間隔
+        Word("那", 0.5, 0.7),
+    ]
+    segs = build_segments(words, fps=30, total_frames=60)
+    deletes = [s for s in segs if s.action == "delete"]
+    assert any(s.text == "嗯" for s in deletes), \
+        "不要求停頓時,黏著的語氣詞也該被刪"
+    print("  ✓ 不要求停頓時,黏在句中的『嗯』照樣刪除")
 
 
 def test_conditional_filler_kept_in_context():
@@ -112,12 +133,56 @@ def test_coverage_complete():
     print("  ✓ 段落完整覆蓋,無斷裂無重疊")
 
 
+def test_micro_trim_cuts_inside_keep():
+    """能量微剪:保留段裡面的安靜區被挖成刪除段,前後說話部分留著"""
+    segs = [Segment(0, 300, "keep")]
+    out = trim_quiet_inside(segs, [(100, 160)], fps=30)
+    assert [(s.start, s.end, s.action) for s in out] == [
+        (0, 100, "keep"), (100, 160, "delete"), (160, 300, "keep")]
+    assert out[1].reason == "silence"
+    print("  ✓ 講話段裡的安靜區被剪掉,前後說話保留")
+
+
+def test_micro_trim_never_touches_music():
+    """音樂/音效段是刻意保護的,微剪絕對不能動它"""
+    segs = [Segment(0, 200, "keep", reason="music", confidence=0.8)]
+    out = trim_quiet_inside(segs, [(50, 150)], fps=30)
+    assert len(out) == 1 and out[0].action == "keep" and out[0].reason == "music"
+    print("  ✓ 音樂段不被微剪動到")
+
+
+def test_micro_trim_keeps_coverage():
+    """微剪後段落仍要首尾相連、完整覆蓋(時間軸不能出現破洞)"""
+    segs = [Segment(0, 100, "keep"),
+            Segment(100, 150, "delete", reason="filler", text="嗯"),
+            Segment(150, 400, "keep")]
+    out = trim_quiet_inside(segs, [(20, 60), (200, 260), (380, 500)], fps=30)
+    assert out[0].start == 0 and out[-1].end == 400
+    for a, b in zip(out, out[1:]):
+        assert a.end == b.start, f"微剪後段落斷裂:{a.end} != {b.start}"
+    assert any(s.action == "delete" and s.start == 20 for s in out)
+    print("  ✓ 微剪後覆蓋完整、超出範圍的安靜區被夾住")
+
+
+def test_micro_trim_no_quiet_is_noop():
+    """沒偵測到安靜區時,結果必須跟原本完全一樣"""
+    segs = build_segments([Word("大家好", 0.0, 1.0), Word("今天", 1.2, 2.0)],
+                        fps=30, total_frames=90)
+    assert trim_quiet_inside(segs, [], fps=30) == segs
+    print("  ✓ 沒有安靜區時行為不變")
+
+
 if __name__ == "__main__":
     print("執行決策引擎測試...")
     test_always_filler_deleted()
     test_embedded_char_kept()
+    test_filler_deleted_without_pause_requirement()
     test_conditional_filler_kept_in_context()
     test_conditional_filler_deleted_when_repeated()
     test_silence_becomes_speed()
     test_coverage_complete()
+    test_micro_trim_cuts_inside_keep()
+    test_micro_trim_never_touches_music()
+    test_micro_trim_keeps_coverage()
+    test_micro_trim_no_quiet_is_noop()
     print("\n全部通過 ✓  決策引擎邏輯正確。")

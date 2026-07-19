@@ -128,17 +128,34 @@ def main():
 
     total_frames = get_total_frames(args.video, fps)
 
-    # --- 2.5 音樂/音效偵測(用「原始」音訊,降噪後的檔音樂可能已被削掉)---
+    # --- 2.5 音訊能量分析(用「原始」音訊,降噪後的檔音樂可能已被削掉)---
+    #   audible = 有聲音的地方 -> 拿來「保護」音樂/音效段
+    #   quiet   = 沒聲音的地方 -> 拿來「剪掉」講話段裡面的小停頓
+    probe_wav = raw_wav if os.path.exists(raw_wav) else clean_wav
+    has_probe = os.path.exists(probe_wav)
     audible = []
-    if cfg.MUSIC_DETECT:
+    if cfg.MUSIC_DETECT and has_probe:
         from modules.audio_probe import detect_audible_regions
-        probe_wav = raw_wav if os.path.exists(raw_wav) else clean_wav
-        if os.path.exists(probe_wav):
-            audible = detect_audible_regions(probe_wav, fps)
+        audible = detect_audible_regions(probe_wav, fps)
+
+    quiet = []
+    if getattr(cfg, "MICRO_TRIM", False) and has_probe:
+        from modules.audio_probe import detect_quiet_regions
+        quiet = detect_quiet_regions(probe_wav, fps)
 
     # --- 3. 決策引擎 ---
     print("[3/5] 決策引擎")
     segments = build_segments(words, fps, total_frames, audible=audible)
+
+    if quiet:
+        from core.decision import trim_quiet_inside
+        before_keep = sum(s.duration for s in segments if s.action == "keep")
+        segments = trim_quiet_inside(segments, quiet, fps)
+        after_keep = sum(s.duration for s in segments if s.action == "keep")
+        saved = (before_keep - after_keep) / fps
+        print(f"  能量微剪:再剪掉 {saved / 60:.1f} 分"
+              f"(講話段裡面沒聲音的小停頓)")
+
     n_del = sum(1 for s in segments if s.action == "delete")
     n_spd = sum(1 for s in segments if s.action == "speed")
     n_music = sum(1 for s in segments if s.reason == "music")

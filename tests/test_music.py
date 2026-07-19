@@ -5,7 +5,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 from core.models import Word
 from core.decision import build_segments, _split_gap
-from modules.audio_probe import audible_regions_from_array
+from modules.audio_probe import (audible_regions_from_array,
+                                 quiet_regions_from_array)
 import config.settings as cfg
 
 # 鎖回預設參數,不受使用者 settings_local 覆寫影響(理由見 test_decision)
@@ -14,6 +15,9 @@ cfg.SILENCE_THRESHOLD_SEC = 1.2
 cfg.SILENCE_PADDING_SEC = 0.15
 cfg.MUSIC_DB_ABOVE_FLOOR = 12.0
 cfg.MUSIC_MIN_SEC = 0.4
+cfg.MICRO_TRIM_MIN_SEC = 0.25
+cfg.MICRO_TRIM_KEEP_SEC = 0.06
+cfg.MICRO_TRIM_DB_BELOW_SPEECH = 22.0
 
 
 def test_music_gap_protected():
@@ -111,6 +115,29 @@ def test_probe_constant_bgm_floor():
     print("  ✓ 全程等音量背景音不會癱瘓靜音剪輯(自適應底噪)")
 
 
+def test_quiet_detects_gap_between_speech():
+    """能量微剪:講話—安靜—講話,中間那段安靜要被抓出來"""
+    sr, fps = 48000, 30
+    loud = 0.2 * np.sin(2 * np.pi * 300 * np.linspace(0, 1, sr, endpoint=False))
+    silence = np.zeros(sr)                        # 中間 1 秒全靜音
+    audio = np.concatenate([loud, silence, loud])
+    regions = quiet_regions_from_array(audio, sr, fps)
+    assert len(regions) == 1, f"應抓到 1 段安靜,實際 {regions}"
+    a, b = regions[0]
+    # 安靜區是第 1~2 秒(幀 30~60),頭尾各留 MICRO_TRIM_KEEP_SEC 不剪
+    assert 30 < a < 36 and 54 < b < 60, f"安靜區位置不對:{regions}"
+    print("  ✓ 講話中間的安靜段被抓出來,且頭尾有留緩衝")
+
+
+def test_quiet_ignores_short_pause():
+    """太短的停頓(自然語氣)不該被剪,免得講話被剁碎"""
+    sr, fps = 48000, 30
+    loud = 0.2 * np.sin(2 * np.pi * 300 * np.linspace(0, 1, sr, endpoint=False))
+    audio = np.concatenate([loud, np.zeros(sr // 10), loud])   # 只停 0.1 秒
+    assert quiet_regions_from_array(audio, sr, fps) == []
+    print("  ✓ 0.1 秒的短停頓不剪(低於 MICRO_TRIM_MIN_SEC)")
+
+
 if __name__ == "__main__":
     print("執行音樂/音效保護測試...")
     test_music_gap_protected()
@@ -121,4 +148,6 @@ if __name__ == "__main__":
     test_probe_detects_tone()
     test_probe_short_blip_ignored()
     test_probe_constant_bgm_floor()
-    print("\n全部通過 ✓  音樂/音效保護邏輯正確。")
+    test_quiet_detects_gap_between_speech()
+    test_quiet_ignores_short_pause()
+    print("\n全部通過 ✓  音樂/音效保護與能量微剪邏輯正確。")

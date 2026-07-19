@@ -88,6 +88,15 @@ FIELDS = [
     {"key": "MUSIC_DETECT", "label": "保護音樂/音效段", "type": "bool",
      "tier": "common", "group": "剪輯",
      "hint": "打勾:沒講話但有聲音的段落(預覽音樂、示範音效)會保留,不被當停頓剪掉或快轉"},
+    {"key": "MICRO_TRIM", "label": "能量微剪(剪更兇)", "type": "bool",
+     "tier": "common", "group": "剪輯",
+     "hint": "打勾:連「講話段裡面」沒聲音的小停頓也一起剪掉(換氣、想詞的空檔)。"
+             "一支 17 分鐘的片通常可以再省 2~3 分鐘,不會少講任何內容"},
+    {"key": "MICRO_TRIM_KEEP_SEC", "label": "微剪:每個停頓留多少", "type": "number",
+     "tier": "common", "group": "剪輯", "min": 0, "max": 0.3, "step": 0.01,
+     "default": 0.06, "soft": True, "show_if": {"MICRO_TRIM": [True]},
+     "hint": "秒。每個停頓的頭尾各留這麼多不剪。覺得剪完太急促、沒有換氣感→調大;"
+             "覺得還是拖→調小(0 = 剪到極限)"},
 
     # ================= 進階頁 =================
     # --- 分組:降噪外掛(VST)---
@@ -121,6 +130,26 @@ FIELDS = [
      "tier": "advanced", "group": "冗詞與口頭禪", "min": 0, "max": 1, "step": 0.05,
      "default": 0.6,
      "hint": "0~1。越低代表程式越沒把握、越常標記出來請你確認"},
+    {"key": "FILLER_PAUSE_SEC", "label": "語氣詞要前後有停頓才刪", "type": "number",
+     "tier": "advanced", "group": "冗詞與口頭禪", "min": 0, "max": 0.5, "step": 0.05,
+     "default": 0.0, "soft": True,
+     "hint": "秒。0 = 看到「嗯、呃」就刪(建議,剪最乾淨)。"
+             "只有辨識引擎選 funasr 時才需要設 0.1——它會把「好啊」拆成兩個字,"
+             "不設限會誤刪句尾的「啊」"},
+    {"key": "FILLER_ISOLATED_GAP_SEC", "label": "口頭禪的孤立判定", "type": "number",
+     "tier": "advanced", "group": "冗詞與口頭禪", "min": 0.05, "max": 1.0, "step": 0.05,
+     "default": 0.25, "soft": True,
+     "hint": "秒。前面停頓超過這個秒數,就把「然後、就是」當成句首語助詞刪掉。"
+             "調小=刪更多口頭禪(誤刪的會下 marker 讓你確認)"},
+    {"key": "MICRO_TRIM_MIN_SEC", "label": "微剪:多短的停頓不剪", "type": "number",
+     "tier": "advanced", "group": "其他微調", "min": 0.1, "max": 1.0, "step": 0.05,
+     "default": 0.25, "soft": True, "show_if": {"MICRO_TRIM": [True]},
+     "hint": "秒。至少要能剪掉這麼久才動手。太小會把講話的自然節奏剁碎"},
+    {"key": "MICRO_TRIM_DB_BELOW_SPEECH", "label": "微剪:安靜的認定", "type": "number",
+     "tier": "advanced", "group": "其他微調", "min": 10, "max": 40, "step": 1,
+     "default": 22.0, "soft": True, "show_if": {"MICRO_TRIM": [True]},
+     "hint": "比說話音量低幾分貝算沒聲音。調大=連小聲的氣音也剪掉(更兇);"
+             "調小=只剪真正的安靜(保守)"},
     {"key": "CUSTOM_VOCAB", "label": "我的額外術語", "type": "list",
      "tier": "advanced", "group": "冗詞與口頭禪",
      "hint": "教學類型以外,你還常講的專有名詞:頻道名、人名、慣用詞。用逗號分隔"},

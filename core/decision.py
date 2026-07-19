@@ -25,18 +25,25 @@ def _is_isolated_or_repeated(words: list[Word], i: int) -> bool:
     if i == 0:
         return True
     gap = words[i].start - words[i - 1].end
-    if gap > 0.4:                    # 前面有停頓,像是新句子的開頭語助
-        return True
+    if gap > getattr(cfg, "FILLER_ISOLATED_GAP_SEC", 0.25):
+        return True                  # 前面有停頓,像是新句子的開頭語助
     return False
 
 
-def _standalone_utterance(words: list[Word], i: int, gap: float = 0.1) -> bool:
+def _standalone_utterance(words: list[Word], i: int,
+                        gap: float | None = None) -> bool:
     """words[i] 是不是「獨立發出」的(前後都有停頓)。
 
     為什麼需要:FunASR 這類逐字引擎會把「好啊」拆成「好」「啊」兩個字;
     黏在句尾的「啊」(前面沒停頓)是句子的一部分,照樣無條件刪除
-    會把正常的話剪壞、把字幕剁碎。真正該刪的語氣詞(嗯…、呃…)
-    是前後都有停頓、單獨冒出來的一聲 —— 只刪這種。"""
+    會把正常的話剪壞、把字幕剁碎。
+
+    門檻由 cfg.FILLER_PAUSE_SEC 控制,設 0 代表不要求(Whisper 建議值:
+    它會把詞排得很密,要求停頓幾乎等於永遠不刪語氣詞)。"""
+    if gap is None:
+        gap = getattr(cfg, "FILLER_PAUSE_SEC", 0.0)
+    if gap <= 0:
+        return True                  # 不要求停頓:看到語氣詞就刪
     before = words[i].start - words[i - 1].end if i > 0 else 99.0
     after = (words[i + 1].start - words[i].end
              if i + 1 < len(words) else 99.0)
@@ -148,6 +155,54 @@ def build_segments(words: list[Word], fps: float, total_frames: int,
             emit_keep(cursor, total_frames)
 
     return _merge_adjacent(segments)
+
+
+def trim_quiet_inside(segments: list[Segment],
+                    quiet: list[tuple[int, int]],
+                    fps: float) -> list[Segment]:
+    """能量微剪:把「保留段」裡面真正沒聲音的地方挖掉。
+
+    為什麼要有這步:辨識引擎給的詞會把時間撐滿,停頓被包在詞的範圍裡面,
+    只看詞間隔的 build_segments 完全看不到。這裡拿實際音量掃出來的安靜區
+    (見 modules/audio_probe.quiet_regions_from_array)再切一次。
+
+    規則:
+      - 只動 action="keep" 的段落。
+      - 音樂/音效段(reason="music")絕不動 —— 那是刻意保護的。
+      - 挖出來的安靜區一律「刪除」,不做快轉:這些停頓通常只有零點幾秒,
+        快轉沒有意義,而且會在 Premiere 產生大量細碎的變速片段(效能地雷)。
+      - quiet 需已排序、彼此不重疊(audio_probe 的輸出天然如此)。
+
+    不改變總覆蓋範圍:切出來的段落仍然首尾相連、覆蓋原本那一段。"""
+    if not quiet:
+        return segments
+
+    out: list[Segment] = []
+    for s in segments:
+        if s.action != "keep" or s.reason == "music":
+            out.append(s)
+            continue
+        cursor = s.start
+        for a, b in quiet:
+            if b <= cursor:
+                continue
+            if a >= s.end:
+                break
+            a, b = max(a, cursor), min(b, s.end)
+            if b <= a:
+                continue
+            if a > cursor:
+                out.append(Segment(cursor, a, "keep", reason=s.reason,
+                                text=s.text, confidence=s.confidence))
+            # 信心 0.95 = 跟一般靜音同級,高於 marker 門檻,不會洗版 marker
+            out.append(Segment(a, b, "delete", reason="silence",
+                            confidence=0.95))
+            cursor = b
+        if cursor < s.end:
+            out.append(Segment(cursor, s.end, "keep", reason=s.reason,
+                            text=s.text, confidence=s.confidence))
+
+    return _merge_adjacent(out)
 
 
 def _merge_adjacent(segments: list[Segment]) -> list[Segment]:
