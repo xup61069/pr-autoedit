@@ -29,12 +29,20 @@
 
 ```
 影片
- → audio_clean.py   清理音訊,輸出乾淨 WAV + 混回影片的 mp4
- → transcribe.py    Whisper 詞級轉錄(唯一真相來源,只轉一次,有快取)
- → decision.py      判定每一段 keep / delete / speed,輸出 Segment 清單
- → remap.py         建立時間戳映射表,字幕和 marker 都從這裡衍生
+ → audio_clean.clean_audio   清理音訊(降噪/標準化),只輸出乾淨 WAV(先不混影片)
+ → transcribe.py             詞級轉錄(唯一真相來源,只轉一次,有快取;引擎可換)
+ → decision.py               判定每一段 keep / delete / speed,輸出 Segment 清單
+ → audio_clean.gate+mux_back 把快轉段音訊抹靜音,再把乾淨音訊混回影片成 mp4
+ → remap.py                  建立時間戳映射表,字幕和 marker 都從這裡衍生
  → premiere_xml.py / subtitles.py / report.py   產生審閱檔案
 ```
+
+⚠️ **混音刻意排在決策之後**:因為要先知道哪些是「靜音快轉段」,才能在混回影片前
+把那幾段的聲音抹成無聲(config.MUTE_SPEED_AUDIO),避免 Premiere 快轉播放時的尖聲。
+不要為了「早點產出 mp4」把混音移回清理階段,那樣就抹不到靜音了。
+
+轉錄引擎可切換(config.ASR_ENGINE:faster-whisper / funasr),各引擎都回傳一樣的
+`list[Word]`,要加新引擎只在 transcribe.py 補一個函式,其餘管線不用動。
 
 模組間全部用 `core/models.py` 定義的 dataclass 溝通,不要傳裸 dict。
 
@@ -86,19 +94,32 @@ python -m tests.test_e2e_smoke  # 動了任何東西,跑這個確認主幹沒斷
 任何「使用者可能想調」的數值(門檻、詞表、倍率、Whisper 模型)都放 `config/settings.py`,
 不要寫死在邏輯裡。使用者調校時只會動這個檔案,不該碰 core/。
 
+`config/settings.py` 尾端有個人覆寫機制:若存在 `config/settings_local.py`,其中的
+全大寫設定會蓋過預設值(不進版控)。新增設定項時維持這個模式即可,不用特別處理。
+
 ## 常見的修改請求與對應位置
 
 | 使用者想要 | 改哪裡 |
 |-----------|--------|
+| 辨識不準/術語錯 | `config/settings.py` 的 CUSTOM_VOCAB(當提示詞/熱詞);改完要刪 02_transcript.json 才會重轉 |
+| 換辨識引擎 | `config/settings.py` 的 ASR_ENGINE;新引擎在 `transcribe.py` 補 `_transcribe_xxx()` |
 | 冗詞判太多/太少 | `config/settings.py` 的 FILLERS_*,或 `decision.py` 的 `_is_isolated_or_repeated` |
 | 靜音切太碎/太鬆 | `config/settings.py` 的 SILENCE_THRESHOLD_SEC |
+| 快轉段有尖聲 | `config/settings.py` 的 MUTE_SPEED_AUDIO(抹靜音);邏輯在 `audio_clean.gate_speed_audio` |
 | 字幕斷句不好 | `remap.py` 的 `build_subtitles`,或 config 的 SUBTITLE_* |
-| 加新的音訊處理路線 | `modules/audio_clean.py`,仿照現有兩個 clean_* 函數 |
+| 加新的音訊處理路線 | `modules/audio_clean.py`,仿照現有 clean_* 函數 |
+| 處理後影片不能播 | 多半是特殊 HEVC 複製失敗;`audio_clean.mux_back` 已有「複製→驗證→GPU 重編碼」退路 |
 | marker 太多/太少 | `config/settings.py` 的 MARKER_MIN_DURATION_MS / MARKER_MAX_CONFIDENCE |
+| 在 Premiere 內一鍵跑 | `premiere-panel/`(CEP 面板,薄薄一層:啟動 pipeline + 匯入結果) |
 | 全自動輸出(不進 PR) | 需新增 modules/render.py,用 ffmpeg 依 timeline.json 切段串接 |
 
-## 尚未實作(未來可能的請求)
+## 已有雛形 / 尚未實作
 
+- **Premiere CEP 面板**:已有 MVP 在 `premiere-panel/`(選影片→跑 pipeline→匯入)。
+  Phase 2 待做:自動抓目前選取素材路徑、進度條、面板內調參數。面板刻意做薄,
+  真正邏輯全在 Python,日後要換 UXP 影響面小。
+- **FunASR 引擎**:已實作為可選(`transcribe.py`)。對中英夾雜內容不如 Whisper,
+  故非預設;純中文內容可切換。
 - 全自動渲染模式(4a):目前只做審閱模式(4b)。要做的話新增 render.py。
 - 監看資料夾:錄完丟進資料夾自動觸發,可用 watchdog 套件。
 - Gradio 網頁介面:給非工程協作者用。
