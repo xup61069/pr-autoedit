@@ -25,6 +25,58 @@ function prDeleteSequence(seq) {
 }
 
 /*
+ * 匯入字幕,並盡量直接掛到序列上。
+ *
+ * 為什麼要先複製成新檔名:Premiere 對「同一個檔案路徑」會沿用專案裡已經
+ * 存在的那個項目,不會重讀檔案內容。所以重跑後 04_subtitles.srt 明明已經
+ * 更新了,匯入看到的還是上一次的舊字幕。複製成帶時間戳的檔名 = 全新路徑,
+ * Premiere 一定會讀到新內容。
+ *
+ * 回傳給面板顯示的短字串:SUBS_OK(有掛上序列)/ SUBS_IMPORTED(只匯入到
+ * 專案,要自己拖到時間軸)/ SUBS_FAIL。
+ */
+function prImportCaptions(proj, srtPath, seq) {
+    var f = new File(srtPath);
+    if (!f.exists) return "SUBS_NONE";
+
+    var target = srtPath;
+    try {
+        var d = new Date();
+        function p2(n) { return (n < 10 ? "0" : "") + n; }
+        var stamp = p2(d.getHours()) + p2(d.getMinutes()) + p2(d.getSeconds());
+        var uniq = srtPath.replace(/\.srt$/i, "_" + stamp + ".srt");
+        if (f.copy(uniq)) target = uniq;
+    } catch (eCopy) { /* 複製失敗就用原檔名,至少還會嘗試匯入 */ }
+
+    try {
+        proj.importFiles([target], true, proj.rootItem, false);
+    } catch (eImp) {
+        return "SUBS_FAIL";
+    }
+
+    // 找出剛匯入的那個字幕項目(用檔名比對)
+    var wanted = target.replace(/\\/g, "/").split("/").pop();
+    var item = null;
+    try {
+        for (var i = 0; i < proj.rootItem.children.numItems; i++) {
+            var ch = proj.rootItem.children[i];
+            var nm = String(ch.name || "");
+            if (nm === wanted || nm === wanted.replace(/\.srt$/i, "")) item = ch;
+        }
+    } catch (eFind) { }
+
+    // 試著直接建立字幕軌掛上去,省得使用者每次都要自己拖。
+    // createCaptionTrack 不是每個 Premiere 版本都有,失敗就退回「請自己拖」。
+    if (item && seq) {
+        try {
+            seq.createCaptionTrack(item, 0);
+            return "SUBS_OK";
+        } catch (eCap) { }
+    }
+    return "SUBS_IMPORTED";
+}
+
+/*
  * 匯入剪好的專案(FCP7 XML)與字幕。
  *
  * replace="1":覆蓋模式。匯入後,把「同名的舊序列」刪掉,只留最新這條
@@ -80,16 +132,23 @@ function prImportEditedProject(xmlPath, srtPath, replace) {
         }
 
         // 有字幕的話一併匯入(失敗不影響主流程)
-        if (srtPath) {
-            var srtFile = new File(srtPath);
-            if (srtFile.exists) {
-                try {
-                    proj.importFiles([srtPath], true, proj.rootItem, false);
-                } catch (e2) { /* 字幕匯入失敗就略過 */ }
-            }
-        }
+        var subs = "";
+        if (srtPath) subs = prImportCaptions(proj, srtPath, fresh);
 
-        return "OK " + removed;
+        return "OK " + removed + " " + subs;
+    } catch (e) {
+        return "ERROR: " + e.toString();
+    }
+}
+
+/* 把字幕匯入並掛到「目前作用中的序列」(剪輯後工具的產字幕鈕用) */
+function prImportCaptionsToActive(srtPath) {
+    try {
+        if (typeof app === "undefined" || !app.project) {
+            return "ERROR: 沒有開啟中的 Premiere 專案";
+        }
+        return prImportCaptions(app.project, srtPath,
+                                app.project.activeSequence);
     } catch (e) {
         return "ERROR: " + e.toString();
     }

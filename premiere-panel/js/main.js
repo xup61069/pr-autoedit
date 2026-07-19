@@ -433,9 +433,10 @@
       cs.evalScript('prImportEditedProject("' + xml + '","' + srt + '","1")', function (r) {
         if (r && r.indexOf("OK") === 0) {
           var n = parseInt(r.split(" ")[1], 10) || 0;
-          setStatus("完成 ✓ 已匯入序列與字幕" +
-            (n ? "(已換掉上次的舊序列)" : "") +
+          setStatus("完成 ✓ 已匯入序列" +
+            (n ? "(已換掉上次的舊序列)" : "") + subsMsg(r) +
             ";下方「剪輯後工具」可開報告、調整重算", "ok");
+          cleanOldSubtitleCopies(outDir, 3);
         } else setStatus("Python 跑完了,但匯入時出錯:" + r, "err");
         $("run").disabled = false;
         rememberVideo(selectedVideo);
@@ -450,6 +451,31 @@
   function outDirOf(video) {
     return path.join(PROJECT_DIR, "output",
       path.basename(video, path.extname(video)));
+  }
+
+  // 匯入字幕時會複製成帶時間戳的新檔(見 host.jsx 的說明),
+  // 這裡順手清掉太舊的副本,只留最近幾份,免得 output 資料夾愈積愈多。
+  function cleanOldSubtitleCopies(outDir, keep) {
+    try {
+      var files = fs.readdirSync(outDir).filter(function (f) {
+        return /^0[45]_subtitles.*_\d{6}\.srt$/.test(f);
+      }).map(function (f) {
+        var p = path.join(outDir, f);
+        return { p: p, t: fs.statSync(p).mtime.getTime() };
+      }).sort(function (a, b) { return b.t - a.t; });
+      files.slice(keep || 3).forEach(function (x) {
+        try { fs.unlinkSync(x.p); } catch (e) {}
+      });
+    } catch (e) {}
+  }
+
+  // 把 host.jsx 回傳的字幕結果翻成人話
+  function subsMsg(r) {
+    if (r.indexOf("SUBS_OK") >= 0) return ";字幕已掛上序列";
+    if (r.indexOf("SUBS_IMPORTED") >= 0)
+      return ";字幕已匯入專案(請從專案面板拖到時間軸)";
+    if (r.indexOf("SUBS_FAIL") >= 0) return ";但字幕匯入失敗";
+    return "";
   }
 
   // 記住最近處理的影片:跑完出現「剪輯後工具」,面板重開也還在
@@ -534,7 +560,9 @@
         cs.evalScript('prImportEditedProject("' + xml + '","' + srt + '","0")',
           function (r) {
             if (r && r.indexOf("OK") === 0) {
-              afterSay("已匯入新序列 ✓(舊序列還在,不喜歡新的就刪掉它)", true);
+              afterSay("已匯入新序列 ✓(舊序列還在,不喜歡新的就刪掉它)"
+                + subsMsg(r), true);
+              cleanOldSubtitleCopies(outDir, 3);
             } else { afterSay("重算完成,但匯入出錯:" + r, false); }
             setAfterButtons(true);
           });
@@ -607,9 +635,12 @@
           appendLog(String(stdout || "") + String(stderr || ""));
           if (err) { afterSay("字幕對位失敗,見下方訊息", false); setAfterButtons(true); return; }
           var srt = toFwd(path.join(outDir, "05_subtitles_final.srt"));
-          cs.evalScript('prImportFile("' + srt + '")', function (r2) {
-            if (r2 && r2.indexOf("OK") === 0) {
-              afterSay("字幕已對準剪完的時間軸並匯入 ✓(05_subtitles_final.srt)", true);
+          // 走跟主流程同一條路:複製成新檔名再匯入,否則 Premiere 會沿用
+          // 專案裡的舊字幕、看起來像「沒有重新生」
+          cs.evalScript('prImportCaptionsToActive("' + srt + '")', function (r2) {
+            if (r2 && r2.indexOf("SUBS_FAIL") < 0 && r2.indexOf("ERROR") !== 0) {
+              afterSay("字幕已對準剪完的時間軸" + subsMsg(r2), true);
+              cleanOldSubtitleCopies(outDir, 3);
             } else { afterSay("字幕產好了,但匯入出錯:" + r2, false); }
             setAfterButtons(true);
           });
