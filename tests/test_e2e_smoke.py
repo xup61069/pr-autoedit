@@ -99,6 +99,44 @@ def test_prompt_always_demonstrates_punctuation():
     print("  ✓ 提示詞帶標點示範句(有無詞彙表都是)")
 
 
+def test_prompt_fits_token_budget():
+    """提示詞不能超過 Whisper 的長度上限,而且示範句一定要在最尾巴。
+
+    Whisper 只保留提示詞的「最後」223 個 token,超過就從開頭砍掉。
+    所以示範句若排在前面,詞彙表一長就會把整句標點示範砍光——
+    標點會全部消失而且毫無徵兆(就是之前那個字幕斷行變爛的 bug)。
+    這個測試守住兩件事:順序不能被改回去、每一類單選都塞得下。"""
+    import io, contextlib
+    from modules.transcribe import (_build_initial_prompt, _est_tokens,
+                                    _PROMPT_TOKEN_BUDGET)
+    old = cfg.VOCAB_CATEGORIES, cfg.CUSTOM_VOCAB, cfg.WHISPER_INITIAL_PROMPT
+    cfg.WHISPER_INITIAL_PROMPT = None
+    tail = "你可以自己調整看看。"
+
+    # 每一類單選都要「完整放得下」,不該印出截斷警告
+    for cat in cfg.VOCAB_PRESETS:
+        cfg.VOCAB_CATEGORIES, cfg.CUSTOM_VOCAB = [cat], []
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            p = _build_initial_prompt()
+        assert "⚠" not in buf.getvalue(), \
+            f"教學類型「{cat}」的詞庫太長,單選就會被砍。請精簡它。"
+        assert p.endswith(tail), f"「{cat}」的提示詞結尾不是標點示範句"
+
+    # 最壞情況:全選 + 個人術語,仍不可超過上限,示範句仍在尾巴
+    cfg.VOCAB_CATEGORIES = list(cfg.VOCAB_PRESETS)
+    cfg.CUSTOM_VOCAB = ["我的頻道名", "自訂術語"]
+    with contextlib.redirect_stdout(io.StringIO()):
+        p = _build_initial_prompt()
+    assert _est_tokens(p) <= _PROMPT_TOKEN_BUDGET, "全選時提示詞超出長度上限"
+    assert p.endswith(tail), "全選時標點示範句沒有留在最尾巴"
+    assert "我的頻道名" in p, "個人術語被砍掉了(它應該排最前面、最不該犧牲)"
+
+    cfg.VOCAB_CATEGORIES, cfg.CUSTOM_VOCAB, cfg.WHISPER_INITIAL_PROMPT = old
+    print("  ✓ 提示詞不超長、示範句在尾巴、個人術語不被犧牲")
+
+
 if __name__ == "__main__":
     main()
     test_prompt_always_demonstrates_punctuation()
+    test_prompt_fits_token_budget()

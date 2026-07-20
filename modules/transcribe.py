@@ -69,14 +69,35 @@ def transcribe(audio_path: str, cache_json: str | None = None) -> list[Word]:
     return words
 
 
+# Whisper 的提示詞有硬性長度上限:它只會保留「最後」這麼多 token,
+# 超出的部分從開頭砍掉(faster_whisper transcribe.py 的 max_length//2-1)。
+# 這個數字不是我們能調的,是模型本身的限制。
+_PROMPT_TOKEN_BUDGET = 223
+
+
+def _est_tokens(s: str) -> int:
+    """估算一段文字大約幾個 token(不必載入模型,估個大概就夠用)。
+
+    刻意「往多的估」。低估的下場是自以為沒超標、實際超標,模型默默把
+    詞彙砍掉而我們毫不知情;高估頂多少放幾個術語,代價小得多。
+    權重是拿 large-v3 的實際 tokenizer 對六組詞庫 + 示範句校準出來的,
+    確認每一組都估得比實際多(比值 1.00~1.44)。"""
+    n = 0.0
+    for ch in s:
+        n += 0.5 if ch.isascii() else 1.4
+    return int(n + 0.5)
+
+
 def effective_vocab() -> list[str]:
     """合併『教學類型詞庫』(VOCAB_CATEGORIES 選到的)與個人額外術語
-    (CUSTOM_VOCAB),去重、保序。這是辨識提示詞/熱詞的實際用詞。"""
-    terms: list[str] = []
+    (CUSTOM_VOCAB),去重、保序。這是辨識提示詞/熱詞的實際用詞。
+
+    順序上「個人術語」排最前面:詞彙表可能超過提示詞長度上限而被截掉尾巴,
+    你自己填的頻道名、人名最不該被犧牲,所以讓它最先進場。"""
+    terms: list[str] = list(getattr(cfg, "CUSTOM_VOCAB", []) or [])
     presets = getattr(cfg, "VOCAB_PRESETS", {}) or {}
     for cat in getattr(cfg, "VOCAB_CATEGORIES", []) or []:
         terms += presets.get(cat, [])
-    terms += getattr(cfg, "CUSTOM_VOCAB", []) or []
     seen: set[str] = set()
     out: list[str] = []
     for t in terms:
@@ -96,16 +117,41 @@ def _build_initial_prompt() -> str:
         「以下是一段中文教學影片的口白。」        -> 0 個句號、2 個逗號
         加上帶標點的示範句                       -> 10 個句號、24 個逗號
     以前詞彙表那串「A、B、C。」剛好起了示範作用,所以詞彙表一清空就破功。
-    現在把示範句寫死在基底,不管有沒有詞彙表都保證有標點。"""
+    現在把示範句寫死在基底,不管有沒有詞彙表都保證有標點。
+
+    ⚠️ 示範句一定要放在「最後面」。Whisper 只保留提示詞的最後 223 個 token,
+    超過就從開頭砍。示範句若排在前面,詞彙表一長就會把它整句砍掉——
+    標點又會全部消失,而且完全沒有徵兆。所以順序是「詞彙表 → 示範句」,
+    真的太長時被犧牲的是詞彙表尾巴(頂多某個術語聽錯),不是標點。"""
     if getattr(cfg, "WHISPER_INITIAL_PROMPT", None):
         return cfg.WHISPER_INITIAL_PROMPT
-    base = ("以下是一段中文教學影片的口白,內容標示標點符號。"
+
+    demo = ("以下是一段中文教學影片的口白,內容標示標點符號。"
             "例如:今天我們來看這個設定,它會影響聲音的表現,"
             "你可以自己調整看看。")
+
     vocab = effective_vocab()
-    if vocab:
-        base += "常見詞彙:" + "、".join(vocab) + "。"
-    return base
+    if not vocab:
+        return demo
+
+    # 詞彙表能用的額度 = 總上限 - 示範句 - 「常見詞彙:」開頭
+    # (估算本身已經偏保守,不必再另外抓安全邊際)
+    budget = _PROMPT_TOKEN_BUDGET - _est_tokens(demo) - 6
+    kept, used = [], 0
+    for t in vocab:
+        cost = _est_tokens(t) + 1          # +1 是分隔用的頓號
+        if used + cost > budget:
+            break
+        kept.append(t)
+        used += cost
+
+    if len(kept) < len(vocab):
+        print(f"  ⚠ 詞彙表太長,這次只用了前 {len(kept)} 個(共 {len(vocab)} 個)。"
+              "辨識提示詞有長度上限,超過的部分模型看不到。\n"
+              "    想讓某些術語一定生效:減少「教學類型」的勾選數量,"
+              "或把最重要的詞填進「我的額外術語」(它排最前面)。")
+
+    return "常見詞彙:" + "、".join(kept) + "。" + demo
 
 
 def _transcribe_faster_whisper(audio_path: str) -> list[Word]:
