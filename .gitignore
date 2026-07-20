@@ -43,3 +43,6 @@ config/vst_state/
 
 # 面板的個人路徑設定(安裝程式產生,不進版控)
 config/panel.json
+
+# 打包出來的發佈檔(不進版控)
+dist/
