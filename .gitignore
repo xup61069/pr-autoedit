@@ -46,3 +46,4 @@ config/panel.json
 
 # 打包出來的發佈檔(不進版控)
 dist/
+config/presets_local.json

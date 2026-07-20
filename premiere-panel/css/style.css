@@ -139,6 +139,17 @@ h1 {
 .numrow input[type="range"] { flex: 1; min-width: 60px; accent-color: #2d6cdf; }
 .numrow input[type="number"] { width: 66px; flex: none; text-align: right; }
 
+/* 設定組合列 */
+.presetbar {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 2px 0 4px;
+}
+.presetbar select {
+  flex: 1; min-width: 110px; background: #1c1c1c; color: #e8e8e8;
+  border: 1px solid #444; border-radius: 4px; padding: 5px 7px;
+  font-size: 0.92em; font-family: inherit;
+}
+.presetbar .btn.small { margin: 0; }
+
 /* 頂端偏好列:字級 + 提示音 */
 .prefbar {
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;

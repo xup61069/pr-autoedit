@@ -27,7 +27,7 @@ config/settings_local.json(見 config/settings.py 尾端的 JSON 覆寫),
            {"SILENCE_ACTION": ["speed"]} = 只有停頓處理選 speed 時才顯示
 """
 from __future__ import annotations
-import sys, json
+import sys, json, os
 
 for _s in (sys.stdout, sys.stderr):
     try:
@@ -71,7 +71,9 @@ FIELDS = [
      "hint": "vst=用你的降噪外掛處理聲音;none=完全不處理(最快,適合先試流程)"},
     {"key": "DELIVERY_MODE", "label": "交付方式", "type": "select",
      "tier": "common", "group": "剪輯", "options": ["baked", "live"],
-     "hint": "baked=直接剪好(建議):想調靈敏度就改設定按「重算剪輯」,幾秒出新序列;live=全保留+顏色標籤,進 Premiere 自己批次處理(片段多,長片會卡)"},
+     "hint": "baked=直接剪好(建議)。想調就改設定按「重算剪輯」,幾秒出新序列。"
+             "live=全部保留、只上顏色標籤,自己在 Premiere 批次處理"
+             "(片段很多,長片會卡)"},
     {"key": "SILENCE_ACTION", "label": "停頓怎麼處理", "type": "select",
      "tier": "common", "group": "剪輯", "options": ["speed", "delete"],
      "hint": "speed=把停頓快轉過去;delete=直接剪掉停頓"},
@@ -85,25 +87,24 @@ FIELDS = [
     {"key": "SILENCE_THRESHOLD_SEC", "label": "停頓多久才算靜音", "type": "number",
      "tier": "common", "group": "剪輯", "min": 0.1, "max": 5, "step": 0.1,
      "soft": True,
-     "hint": "兩句話中間停超過這個秒數,才會被當成要處理的停頓。講話慢的人調高一點"},
+     "hint": "兩句話之間停超過幾秒才算停頓。講話慢的人調高一點"},
     {"key": "MUSIC_DETECT", "label": "保護音樂/音效段", "type": "bool",
      "tier": "common", "group": "剪輯",
-     "hint": "打勾:沒講話但有聲音的段落(預覽音樂、示範音效)會保留,不被當停頓剪掉或快轉"},
+     "hint": "建議打勾。沒講話但有聲音的段落(預覽音樂、示範音效)會被保護,不會剪掉"},
     {"key": "MICRO_TRIM", "label": "能量微剪(剪更兇)", "type": "bool",
      "tier": "common", "group": "剪輯",
-     "hint": "打勾:連「講話段裡面」沒聲音的小停頓也一起剪掉(換氣、想詞的空檔)。"
-             "一支 17 分鐘的片通常可以再省 2~3 分鐘,不會少講任何內容"},
+     "hint": "剪更兇的主力,建議打勾。連句子中間沒聲音的小空檔也剪掉,"
+             "17 分鐘的片通常再省 2~3 分鐘,而且不會少講任何內容"},
     {"key": "MICRO_TRIM_KEEP_SEC", "label": "微剪:每個停頓留多少", "type": "number",
      "tier": "common", "group": "剪輯", "min": 0, "max": 0.3, "step": 0.01,
      "soft": True, "show_if": {"MICRO_TRIM": [True]},
-     "hint": "秒。每個停頓的頭尾各留這麼多不剪。覺得剪完太急促、沒有換氣感→調大;"
-             "覺得還是拖→調小(0 = 剪到極限)"},
+     "hint": "剪完覺得太急促就調大,覺得還是拖就調小(0=剪到極限)。"
+             "單位是秒,指每個停頓的頭尾各留多少不剪"},
 
     # --- 分組:剪完自動做 ---
     {"key": "AUTO_OPEN_REPORT", "label": "剪完自動打開審閱報告", "type": "bool",
      "tier": "common", "group": "剪完自動做",
-     "hint": "打勾:剪完直接用瀏覽器開報告給你看(哪裡被剪、省了多少時間),"
-             "不用自己去按"},
+     "hint": "剪完直接把報告開給你看,不用自己去按"},
     {"key": "AUTO_APPLY_DENOISE", "label": "匯入後自動掛降噪(不建議)", "type": "bool",
      "tier": "common", "group": "剪完自動做",
      "hint": "建議別勾。這是「每個片段各掛一個」降噪,而剪很兇的片一條序列"
@@ -116,7 +117,8 @@ FIELDS = [
     {"key": "VST_BAKE", "label": "把降噪烘進音檔", "type": "bool",
      "tier": "advanced", "group": "降噪外掛(VST)",
      "show_if": {"AUDIO_MODE": ["vst"]},
-     "hint": "不勾(建議):聲音保持原樣,降噪在 Premiere 裡掛 VoiceFX,隨時可調可關;勾:先處理進音檔(舊做法,之後改不了)"},
+     "hint": "建議不勾。不勾=聲音保持原樣,降噪在 Premiere 裡掛,隨時可調可關;"
+             "勾了=先處理進音檔,之後就改不了"},
     {"key": "VST_CHAIN", "label": "VST 外掛路徑", "type": "vstlist",
      "tier": "advanced", "group": "降噪外掛(VST)",
      "show_if": {"AUDIO_MODE": ["vst"]},
@@ -247,13 +249,40 @@ def fields_with_defaults() -> list[dict]:
     return out
 
 
+def _all_presets() -> tuple[dict, list]:
+    """內建組合 + 你自己存的組合。回傳(全部組合, 哪些是你存的)。
+
+    你存的放在 config/presets_local.json(不進版控)。同名時以你的為準 ——
+    你顯然比較清楚自己要什麼。"""
+    presets = dict(getattr(cfg, "SETTING_PRESETS", {}))
+    mine: list[str] = []
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "config", "presets_local.json")
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                local = json.load(f)
+            if isinstance(local, dict):
+                presets.update(local)
+                mine = sorted(local.keys())
+        except (ValueError, OSError):
+            pass
+    return presets, mine
+
+
 def dump() -> None:
     values = {f["key"]: getattr(cfg, f["key"], None) for f in FIELDS}
+    presets, mine = _all_presets()
     out = {
         "fields": fields_with_defaults(),
         "categories_available": list(getattr(cfg, "VOCAB_PRESETS", {}).keys()),
         "collapsed_groups": COLLAPSED_GROUPS,
         "values": values,
+        # 設定組合:presets=全部、my_presets=你自己存的(只有這些可以刪)、
+        # preset_keys=套用組合時「只會」動到的欄位
+        "presets": presets,
+        "my_presets": mine,
+        "preset_keys": list(getattr(cfg, "PRESET_KEYS", [])),
         # 面板存檔時用來判斷「這個值跟預設一樣嗎」——一樣的就不寫進
         # settings_local.json,讓你以後吃得到程式改良過的預設值
         "defaults": {f["key"]: getattr(cfg, "DEFAULTS", {}).get(f["key"])

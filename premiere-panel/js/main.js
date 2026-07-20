@@ -321,6 +321,7 @@
         try { settingsData = JSON.parse(stdout); }
         catch (e) { $("formCommon").textContent = "設定格式解析失敗"; return; }
         renderForm();
+        fillPresetPicker();
       });
   }
 
@@ -563,6 +564,103 @@
     }
     return wrap;
   }
+
+  // ---------- 設定組合 ----------
+  var PRESETS_FILE = function () {
+    return path.join(PROJECT_DIR, "config", "presets_local.json");
+  };
+
+  function fillPresetPicker() {
+    var sel = $("presetPick");
+    if (!sel || !settingsData) return;
+    sel.innerHTML = "";
+    var first = document.createElement("option");
+    first.value = ""; first.textContent = "選一個設定組合…";
+    sel.appendChild(first);
+    var mine = settingsData.my_presets || [];
+    Object.keys(settingsData.presets || {}).forEach(function (name) {
+      var op = document.createElement("option");
+      op.value = name;
+      op.textContent = name + (mine.indexOf(name) >= 0 ? "(我存的)" : "");
+      sel.appendChild(op);
+    });
+  }
+
+  // 套用組合:組合裡有寫的就用它的值,沒寫的一律回到內建預設。
+  // 這樣「套用之後看到的就是這個組合的全貌」,不會殘留上一個組合的設定。
+  $("presetApply").addEventListener("click", function () {
+    var name = $("presetPick").value;
+    if (!name || !settingsData) return;
+    var preset = (settingsData.presets || {})[name] || {};
+    var defs = settingsData.defaults || {};
+    (settingsData.preset_keys || []).forEach(function (k) {
+      var v = (k in preset) ? preset[k] : defs[k];
+      if (v === undefined || !settingsData.values.hasOwnProperty(k)) return;
+      settingsData.values[k] = v;
+    });
+    renderForm();                 // 用新值重畫表單
+    fillPresetPicker();
+    $("presetPick").value = name;
+    $("saveMsg").textContent = "已套用「" + name + "」,按儲存設定才會生效";
+    $("saveMsg").style.color = "#d9a441";
+  });
+
+  $("presetSave").addEventListener("click", function () {
+    if (!settingsData) return;
+    var name = window.prompt("把目前的剪輯設定存成組合,取個名字:", "");
+    if (!name) return;
+    name = String(name).trim();
+    if (!name) return;
+    var cur = collectValues();
+    var body = {};
+    (settingsData.preset_keys || []).forEach(function (k) {
+      if (k in cur) body[k] = cur[k];
+    });
+    var mine = {};
+    try {
+      if (fs.existsSync(PRESETS_FILE())) {
+        mine = JSON.parse(fs.readFileSync(PRESETS_FILE(), "utf8")) || {};
+      }
+    } catch (e) {}
+    mine[name] = body;
+    try {
+      fs.writeFileSync(PRESETS_FILE(), JSON.stringify(mine, null, 2), "utf8");
+    } catch (e) {
+      $("saveMsg").textContent = "存不起來:" + e.message;
+      $("saveMsg").style.color = "#e06c6c";
+      return;
+    }
+    settingsData.presets[name] = body;
+    if ((settingsData.my_presets || []).indexOf(name) < 0) {
+      settingsData.my_presets = (settingsData.my_presets || []).concat(name);
+    }
+    fillPresetPicker();
+    $("presetPick").value = name;
+    $("saveMsg").textContent = "已存成「" + name + "」";
+    $("saveMsg").style.color = "#2e8b57";
+  });
+
+  $("presetDel").addEventListener("click", function () {
+    var name = $("presetPick").value;
+    if (!name || !settingsData) return;
+    if ((settingsData.my_presets || []).indexOf(name) < 0) {
+      $("saveMsg").textContent = "內建組合不能刪(只能刪你自己存的)";
+      $("saveMsg").style.color = "#e06c6c";
+      return;
+    }
+    var mine = {};
+    try { mine = JSON.parse(fs.readFileSync(PRESETS_FILE(), "utf8")) || {}; }
+    catch (e) {}
+    delete mine[name];
+    try { fs.writeFileSync(PRESETS_FILE(), JSON.stringify(mine, null, 2), "utf8"); }
+    catch (e) {}
+    delete settingsData.presets[name];
+    settingsData.my_presets = (settingsData.my_presets || []).filter(
+      function (n) { return n !== name; });
+    fillPresetPicker();
+    $("saveMsg").textContent = "已刪除「" + name + "」";
+    $("saveMsg").style.color = "#2e8b57";
+  });
 
   // ---------- 收集表單 -> 物件 ----------
   // 表單上「目前」的所有值(給自動化步驟判斷用)

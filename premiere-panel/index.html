@@ -27,9 +27,18 @@
     <!-- 設定區(常用) -->
     <div class="section">
       <div class="section-head" id="settingsHead">
-        <span>⚙ 設定(用預設就能跑,想調再展開)</span><span id="settingsToggle" class="chev">▸</span>
+        <span>⚙ 設定(想調再展開,不調也能跑)</span><span id="settingsToggle" class="chev">▸</span>
       </div>
       <div id="settingsBody" class="section-body" style="display:none">
+        <div class="presetbar">
+          <select id="presetPick"><option value="">選一個設定組合…</option></select>
+          <button id="presetApply" class="btn small">套用</button>
+          <button id="presetSave" class="btn small ghost">另存</button>
+          <button id="presetDel" class="btn small ghost">刪除</button>
+        </div>
+        <div class="hint" style="margin:0 0 8px">
+          一鍵切換剪輯風格。只會改「怎麼剪」的項目,你的外掛路徑、詞彙表不會被動到。
+        </div>
         <div id="formCommon" class="form"></div>
         <div class="row">
           <button id="save" class="btn small">儲存設定</button>
@@ -52,18 +61,13 @@
       <div id="afterBody" class="section-body">
         <div id="afterVideo" class="path" style="margin:0 0 6px"></div>
         <button id="openReport" class="btn">開啟審閱報告</button>
-        <div class="hint">在瀏覽器打開這次剪輯的報告:哪裡被剪、哪裡被快轉、
-          省了多少時間,一分鐘掃完。覺得剪不對再回來調設定。</div>
+        <div class="hint">看這次剪了哪裡、省了多少時間。一分鐘掃完,覺得不對再回來調設定。</div>
         <button id="rebuild" class="btn">重算剪輯 → 匯入新序列</button>
-        <div class="hint">改了任何設定(交付方式、停頓處理、快轉倍率…)後按這顆:
-          用新設定重算(幾秒,不重跑辨識)並匯入一個新序列。舊序列不會動,隨時可反悔。</div>
+        <div class="hint">改完設定按這顆,幾秒出一條新序列。舊的留著,不喜歡就刪掉新的。</div>
         <button id="applyVst" class="btn">幫目前序列掛降噪(實驗)</button>
-        <div class="hint">試著把 VoiceFX 掛到目前序列的每個聲音片段(音樂段除外),
-          之後在「效果控制」隨時調整。若失敗:視窗 &gt; 音軌混音器,
-          在 A1 軌最上面的效果插槽選 VoiceFX,一次搞定、整軌生效、隨時可調。</div>
+        <div class="hint">多數情況<b>不需要按</b>。建議改用:視窗 &gt; 音軌混音器,A1 軌效果插槽選 VoiceFX——整軌一次搞定,也不吃顯卡記憶體。</div>
         <button id="subsFromSeq" class="btn">用目前序列產生字幕</button>
-        <div class="hint">在 Premiere 剪完之後按這顆:依時間軸目前的實際樣子重新對位字幕
-          (被你刪掉的內容自動消失、快轉段自動壓縮),並匯入新的 SRT。</div>
+        <div class="hint">自己動手剪完後按這顆,字幕會重新對準你剪完的樣子。</div>
         <button id="clearCache" class="btn">清除快取(重新辨識)</button>
         <div class="hint">平常用不到。改設定程式都會自己重跑該步驟;
           只有在「辨識結果怪怪的、但設定又沒動過」時才需要這顆。</div>
@@ -72,9 +76,7 @@
     </div>
 
     <div class="hint">
-      完成後會自動把序列與字幕匯入 Premiere。同一支影片重跑會<b>換掉</b>上次那條序列
-      (不會愈堆愈多;別支影片的序列不受影響)。剪的太兇或太保守?
-      改「⚙ 設定」→ 按「重算剪輯」,幾秒出一個新序列,那顆會<b>保留</b>舊的讓你比較。
+      剪完會自動匯入序列與字幕。<b>同一支片重跑會換掉上次那條</b>,不會愈堆愈多。<br>剪太兇或太保守?改設定按「重算剪輯」——那顆會<b>留著</b>舊的讓你比較。
     </div>
   </div>
 
@@ -84,7 +86,7 @@
       <span class="chev">◂</span><span>返回</span>
     </div>
     <h1>進階設定</h1>
-    <div class="hint" style="margin:0 0 8px">這些平常不用動;每項下方有白話說明。</div>
+    <div class="hint" style="margin:0 0 8px">平常不用動。每項下方都有白話說明。</div>
     <div id="formAdvanced" class="form"></div>
     <div class="row">
       <button id="save2" class="btn small">儲存設定</button>

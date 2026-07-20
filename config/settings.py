@@ -327,6 +327,56 @@ DENOISE_PER_CLIP_MAX = 20
 
 
 # ============================================================
+# 設定組合(一鍵切換剪輯風格)
+# ============================================================
+# 「這支片想剪兇一點、那支片想保留呼吸感」——與其每次記得要調哪五個數字,
+# 不如存成組合一鍵切換。面板可以套用,也可以把目前的設定另存成你自己的組合
+# (存進 config/presets_local.json,不進版控)。
+#
+# 只有下面 PRESET_KEYS 列的「剪輯風格」設定會被組合覆蓋。
+# 你的 VST 路徑、詞彙表、字幕字數這些「個人的東西」永遠不會被動到 ——
+# 換個剪輯風格不該把你的外掛設定洗掉。
+PRESET_KEYS = [
+    "SILENCE_ACTION", "SILENCE_SPEED_FACTOR", "MUTE_SPEED_AUDIO",
+    "SILENCE_THRESHOLD_SEC", "SILENCE_PADDING_SEC",
+    "MICRO_TRIM", "MICRO_TRIM_KEEP_SEC", "MICRO_TRIM_MIN_SEC",
+    "MICRO_TRIM_DB_BELOW_SPEECH",
+    "MUSIC_DETECT", "MUSIC_MIN_SEC", "MUSIC_DB_ABOVE_FLOOR",
+    "FILLER_PAUSE_SEC", "FILLER_ISOLATED_GAP_SEC", "RETAKE_DETECT",
+]
+
+# 內建組合。沒列到的項目 = 用內建預設值,所以每個組合都是完整、明確的狀態
+# (套用之後你看到的就是這個組合的全貌,不會殘留上一個組合的設定)。
+SETTING_PRESETS = {
+    "標準(平衡)": {},
+    "剪很兇(跳接風格)": {
+        "SILENCE_ACTION": "delete",
+        "SILENCE_THRESHOLD_SEC": 0.3,
+        "SILENCE_PADDING_SEC": 0.0,
+        "MICRO_TRIM_KEEP_SEC": 0.04,
+        "MICRO_TRIM_MIN_SEC": 0.2,
+        "MICRO_TRIM_DB_BELOW_SPEECH": 26.0,
+        "FILLER_ISOLATED_GAP_SEC": 0.2,
+    },
+    "保守(保留呼吸感)": {
+        "SILENCE_ACTION": "speed",
+        "SILENCE_SPEED_FACTOR": 6.0,
+        "SILENCE_THRESHOLD_SEC": 1.5,
+        "SILENCE_PADDING_SEC": 0.25,
+        "MICRO_TRIM_KEEP_SEC": 0.12,
+        "MICRO_TRIM_MIN_SEC": 0.4,
+        "MICRO_TRIM_DB_BELOW_SPEECH": 18.0,
+    },
+    "只縮停頓不剪內容": {
+        "SILENCE_ACTION": "speed",
+        "SILENCE_SPEED_FACTOR": 12.0,
+        "MICRO_TRIM": False,
+        "FILLER_PAUSE_SEC": 0.15,
+    },
+}
+
+
+# ============================================================
 # 預設值快照
 # ============================================================
 # 在套用任何個人覆寫「之前」,先把上面這些內建預設值原封不動記一份。
