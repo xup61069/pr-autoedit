@@ -203,6 +203,39 @@ def test_ntsc_no_drift():
     print("  ✓ NTSC:長片映射單調遞增,無異常漂移")
 
 
+def test_partial_cut_word_keeps_subtitle():
+    """詞的頭尾被剪到一點點時,字幕仍要留著(不能整個詞消失)。
+
+    這是能量微剪引進的回歸:微剪剪的正是「詞邊緣的空白」,
+    舊寫法只要頭或尾落在剪掉的地方就丟掉整個詞,實測害 14.4% 的詞
+    從字幕消失(聲音其實還在)。"""
+    # 0~100 保留、100~110 剪掉、110~200 保留
+    segs = [Segment(0, 100, "keep"),
+            Segment(100, 110, "delete", reason="silence", confidence=0.95),
+            Segment(110, 200, "keep")]
+    table = RemapTable(segs, fps=30)
+    # 這個詞橫跨剪點(90~120):大部分還在,字幕必須留著
+    subs = table.build_subtitles([Word("重要的字", 90 / 30, 120 / 30)],
+                                 max_chars=18, max_gap_frames=15)
+    assert len(subs) == 1, "橫跨剪點的詞不該從字幕消失"
+    assert subs[0].text == "重要的字"
+    assert subs[0].end_frame >= subs[0].start_frame
+    print("  ✓ 詞被剪掉一部分時,字幕仍保留")
+
+
+def test_fully_cut_word_dropped():
+    """整個詞都被剪掉時,字幕才該消失"""
+    segs = [Segment(0, 100, "keep"),
+            Segment(100, 200, "delete", reason="filler", text="嗯",
+                    confidence=1.0),
+            Segment(200, 300, "keep")]
+    table = RemapTable(segs, fps=30)
+    subs = table.build_subtitles([Word("嗯", 120 / 30, 180 / 30)],
+                                 max_chars=18, max_gap_frames=15)
+    assert subs == [], "整個被剪掉的詞應該從字幕消失"
+    print("  ✓ 整個被剪掉的詞不出現在字幕")
+
+
 if __name__ == "__main__":
     print("執行重映射引擎測試...")
     test_keep_only()
@@ -215,4 +248,6 @@ if __name__ == "__main__":
     test_subtitles_break_at_punctuation()
     test_subtitles_strip_trailing_comma()
     test_ntsc_no_drift()
+    test_partial_cut_word_keeps_subtitle()
+    test_fully_cut_word_dropped()
     print("\n全部通過 ✓  地基正確,可以往上蓋。")

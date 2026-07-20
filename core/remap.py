@@ -92,6 +92,31 @@ class RemapTable:
         return None
 
     # -----------------------------------------------------------------
+    # 把「原始影片的一段區間」映射到時間軸區間
+    # -----------------------------------------------------------------
+    def map_span(self, orig_start: int, orig_end: int) -> Optional[tuple[int, int]]:
+        """回傳 (時間軸起幀, 時間軸迄幀);整段都被剪掉才回 None。
+
+        為什麼不能只用 map_frame 對頭尾兩個點:一個詞的頭或尾常常
+        剛好落在被剪掉的地方(能量微剪剪的就是詞邊緣的空白),
+        那樣會把「其實還聽得到」的詞整個丟掉,字幕就會莫名其妙缺字。
+        改成看「有沒有任何一部分留著」,留著就對到留下來的那一段。"""
+        first = last = None
+        for sp in self._spans:
+            a = max(orig_start, sp.orig_start)
+            b = min(orig_end, sp.orig_end)
+            if b <= a:
+                continue
+            ts = sp.timeline_start + round((a - sp.orig_start) / sp.factor)
+            te = sp.timeline_start + round((b - sp.orig_start) / sp.factor)
+            if first is None:
+                first = ts
+            last = te
+        if first is None:
+            return None
+        return first, max(first, last)
+
+    # -----------------------------------------------------------------
     # 把 Whisper 的詞級時間戳,轉成剪輯後的字幕行
     # 被剪掉的詞自動略過;相鄰的詞聚合成一句
     # -----------------------------------------------------------------
@@ -145,10 +170,14 @@ class RemapTable:
 
         for w in words:
             ws_orig = w.start_frame(self.fps)
-            ts = self.map_frame(ws_orig)
-            te = self.map_frame(max(ws_orig, w.end_frame(self.fps) - 1))
-            if ts is None or te is None:
-                continue    # 這個詞被剪掉了:跳過即可,不強制斷行
+            we_orig = w.end_frame(self.fps)
+            # 只要這個詞還有一部分留在時間軸上,字幕就要留著(見 map_span)。
+            # 整個詞都被剪掉才跳過,且不強制斷行。
+            span = self.map_span(ws_orig, max(ws_orig + 1, we_orig))
+            if span is None:
+                continue
+            ts, te = span
+            te = max(ts, te - 1)
 
             # 換行時機(加入這個詞之前判斷):原始停頓大,或已達字數上限。
             # 但若正好在英文單字中間,先不斷,等單字結束(避免 Pat|tern)

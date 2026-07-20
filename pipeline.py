@@ -158,7 +158,11 @@ def main():
                   f"(信心低,全部會下 marker,請看報告確認)")
 
     if quiet:
-        from core.decision import trim_quiet_inside
+        from core.decision import trim_quiet_inside, protect_words
+        # 別把整個詞吃掉:輕聲短字(你、它、的)音量低,整個掉在門檻下面時
+        # 會連聲音帶字幕一起消失,聽起來像跳針。代價只有幾秒,很划算。
+        if getattr(cfg, "MICRO_TRIM_PROTECT_WORDS", True):
+            quiet = protect_words(quiet, words, fps)
         before_keep = sum(s.duration for s in segments if s.action == "keep")
         segments = trim_quiet_inside(segments, quiet, fps)
         after_keep = sum(s.duration for s in segments if s.action == "keep")

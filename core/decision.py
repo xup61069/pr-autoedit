@@ -195,6 +195,24 @@ def _cut_spans(segments: list[Segment],
     return _merge_adjacent(out)
 
 
+def protect_words(quiet: list[tuple[int, int]], words: list[Word],
+                fps: float) -> list[tuple[int, int]]:
+    """丟掉那些「會把一整個詞吃掉」的安靜區。
+
+    為什麼:輕聲的短字(你、它、的…)音量本來就低,可能整個掉在門檻以下。
+    連整個詞一起剪掉的話,聲音會少一個字、字幕也跟著缺字,聽起來像跳針。
+    辨識引擎既然在那裡認出一個詞,就當作那裡有話,寧可少剪一點。"""
+    if not quiet or not words:
+        return quiet
+    spans = [(w.start_frame(fps), w.end_frame(fps)) for w in words]
+    out = []
+    for a, b in quiet:
+        if any(a <= ws and we <= b for ws, we in spans if ws < b and we > a):
+            continue                     # 這塊安靜區整個蓋住某個詞 -> 不剪
+        out.append((a, b))
+    return out
+
+
 def trim_quiet_inside(segments: list[Segment],
                     quiet: list[tuple[int, int]],
                     fps: float) -> list[Segment]:

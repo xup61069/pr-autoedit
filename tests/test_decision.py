@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.models import Word, Segment
 from core.decision import (build_segments, trim_quiet_inside,
-                          find_retakes, drop_retakes)
+                          find_retakes, drop_retakes, protect_words)
 import config.settings as cfg
 
 # 測試以「預設參數」為前提;使用者面板存的 settings_local 覆寫
@@ -241,6 +241,24 @@ def test_drop_retakes_keeps_coverage():
     print("  ✓ 砍重講後覆蓋完整,且會下 marker 供確認")
 
 
+def test_protect_words_skips_whole_word_cuts():
+    """安靜區若會把整個詞吃掉,就不剪(否則聲音和字幕都會缺字)"""
+    words = [Word("你", 1.0, 1.2), Word("好嗎", 2.0, 2.6)]
+    # (25,45) 完整蓋住「你」(30~36 幀) -> 應被丟棄
+    # (100,140) 沒蓋住任何詞 -> 應保留
+    out = protect_words([(25, 45), (100, 140)], words, fps=30)
+    assert out == [(100, 140)], f"實際 {out}"
+    print("  ✓ 會吃掉整個詞的安靜區不剪,其餘照剪")
+
+
+def test_protect_words_allows_partial_overlap():
+    """只蓋到詞的一部分(詞邊緣的空白)照剪不誤"""
+    words = [Word("大家好", 1.0, 2.0)]      # 30~60 幀
+    out = protect_words([(50, 80)], words, fps=30)
+    assert out == [(50, 80)], "只重疊詞尾的安靜區應該照剪"
+    print("  ✓ 只剪到詞邊緣的空白不受影響")
+
+
 if __name__ == "__main__":
     print("執行決策引擎測試...")
     test_always_filler_deleted()
@@ -259,4 +277,6 @@ if __name__ == "__main__":
     test_retake_needs_pause()
     test_retake_off_by_default()
     test_drop_retakes_keeps_coverage()
+    test_protect_words_skips_whole_word_cuts()
+    test_protect_words_allows_partial_overlap()
     print("\n全部通過 ✓  決策引擎邏輯正確。")
