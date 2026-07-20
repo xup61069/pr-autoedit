@@ -551,13 +551,19 @@
       cs.evalScript('prImportEditedProject("' + xml + '","' + srt + '","1")', function (r) {
         if (r && r.indexOf("OK") === 0) {
           var n = parseInt(r.split(" ")[1], 10) || 0;
-          setStatus("完成 ✓ 已匯入序列" +
-            (n ? "(已換掉上次的舊序列)" : "") + subsMsg(r) +
-            ";下方「剪輯後工具」可開報告、調整重算", "ok");
+          var base = "完成 ✓ 已匯入序列" +
+            (n ? "(已換掉上次的舊序列)" : "") + subsMsg(r);
+          setStatus(base, "ok");
           cleanOldSubtitleCopies(outDir, 3);
-        } else setStatus("Python 跑完了,但匯入時出錯:" + r, "err");
+          rememberVideo(selectedVideo);
+          runAutoSteps(selectedVideo, function (extra) {
+            setStatus(base + extra, "ok");
+          });
+        } else {
+          setStatus("Python 跑完了,但匯入時出錯:" + r, "err");
+          rememberVideo(selectedVideo);
+        }
         $("run").disabled = false;
-        rememberVideo(selectedVideo);
       });
     });
   }
@@ -635,20 +641,45 @@
     });
   }
 
-  // ---------- 開啟審閱報告(用系統預設瀏覽器) ----------
-  $("openReport").addEventListener("click", function () {
-    if (!lastVideo) return;
-    var report = path.join(outDirOf(lastVideo), "04_report.html");
-    if (!fs.existsSync(report)) {
-      afterSay("找不到報告檔(要先跑過一次剪輯)", false);
+  // ---------- 取得目前設定值 ----------
+  // 表單展開過就用表單上的「當下」值(可能還沒存檔),沒展開過才問 Python。
+  function withValues(cb) {
+    if (settingsData && settingsData.values) {
+      var v = {}, k;
+      for (k in settingsData.values) v[k] = settingsData.values[k];
+      var live = collectValues();
+      for (k in live) v[k] = live[k];
+      cb(v);
       return;
+    }
+    cp.execFile(PYTHON, ["ui_settings.py", "dump"],
+      { cwd: PROJECT_DIR, maxBuffer: 4 * 1024 * 1024 },
+      function (err, stdout) {
+        if (err) { cb(null); return; }
+        try { cb(JSON.parse(stdout).values); } catch (e) { cb(null); }
+      });
+  }
+
+  // ---------- 開啟審閱報告(用系統預設瀏覽器) ----------
+  function openReportFor(video, quiet) {
+    var report = path.join(outDirOf(video), "04_report.html");
+    if (!fs.existsSync(report)) {
+      if (!quiet) afterSay("找不到報告檔(要先跑過一次剪輯)", false);
+      return false;
     }
     try {
       cp.spawn("cmd", ["/c", "start", "", report], { windowsHide: true });
-      afterSay("已在瀏覽器開啟報告 ✓", true);
+      if (!quiet) afterSay("已在瀏覽器開啟報告 ✓", true);
+      return true;
     } catch (e) {
-      afterSay("開啟失敗:" + e.message, false);
+      if (!quiet) afterSay("開啟失敗:" + e.message, false);
+      return false;
     }
+  }
+
+  $("openReport").addEventListener("click", function () {
+    if (!lastVideo) return;
+    openReportFor(lastVideo, false);
   });
 
   // ---------- P3:重算剪輯(快)→ 匯入新序列 ----------
@@ -689,9 +720,13 @@
         cs.evalScript('prImportEditedProject("' + xml + '","' + srt + '","0")',
           function (r) {
             if (r && r.indexOf("OK") === 0) {
-              afterSay("已匯入新序列 ✓(名稱帶這次的時間;舊序列還在,"
-                + "可以兩條互相比較,不喜歡新的就刪掉它)" + subsMsg(r), true);
+              var base = "已匯入新序列 ✓(名稱帶這次的時間;舊序列還在,"
+                + "可以兩條互相比較,不喜歡新的就刪掉它)" + subsMsg(r);
+              afterSay(base, true);
               cleanOldSubtitleCopies(outDir, 3);
+              runAutoSteps(lastVideo, function (extra, ok) {
+                afterSay(base + extra, ok !== false);
+              });
             } else { afterSay("重算完成,但匯入出錯:" + r, false); }
             setAfterButtons(true);
           });
@@ -700,50 +735,69 @@
   });
 
   // ---------- P4:幫目前序列掛降噪(QE 實驗;失敗教用音軌混音器) ----------
-  function vstEffectName(cb) {
-    // 從 VST 鏈第一個外掛的檔名推效果名(VoiceFX.vst3 -> VoiceFX)
-    function fromValues(values) {
-      var chain = (values && values.VST_CHAIN) || [];
-      if (!chain.length) return null;
-      var base = String(chain[0]).replace(/\\/g, "/").split("/").pop();
-      return base.replace(/\.vst3$/i, "");
-    }
-    if (settingsData) { cb(fromValues(settingsData.values)); return; }
-    cp.execFile(PYTHON, ["ui_settings.py", "dump"],
-      { cwd: PROJECT_DIR, maxBuffer: 4 * 1024 * 1024 },
-      function (err, stdout) {
-        if (err) { cb(null); return; }
-        try { cb(fromValues(JSON.parse(stdout).values)); }
-        catch (e) { cb(null); }
-      });
+  // 從 VST 鏈第一個外掛的檔名推效果名(VoiceFX.vst3 -> VoiceFX)
+  function effectNameFrom(values) {
+    var chain = (values && values.VST_CHAIN) || [];
+    if (!chain.length) return null;
+    var base = String(chain[0]).replace(/\\/g, "/").split("/").pop();
+    return base.replace(/\.vst3$/i, "");
   }
 
   var MIXER_HINT = "請改用穩定做法:視窗 > 音軌混音器,A1 軌最上面的效果插槽選 " +
     "VoiceFX,一次搞定、整軌生效、隨時可調。";
 
+  // 把降噪掛到目前序列。done(成功與否, 給人看的訊息)
+  function applyDenoise(values, done) {
+    var name = effectNameFrom(values);
+    if (!name) {
+      done(false, "設定裡沒有 VST 外掛路徑。" + MIXER_HINT);
+      return;
+    }
+    // 音樂段不掛降噪(降噪是衝著人聲設計的,會把音樂當噪音削掉)
+    cs.evalScript('prApplyAudioEffect("' + name + '","音樂")', function (r) {
+      if (r && r.indexOf("OK") === 0) {
+        done(true, "降噪已掛到 " + r.split(" ")[1] + " 個聲音片段 ✓ "
+          + "到「效果控制」隨時調整,不滿意可 Ctrl+Z 復原");
+      } else if (r === "NOFX") {
+        done(false, "Premiere 效果清單裡找不到「" + name + "」。" + MIXER_HINT);
+      } else {
+        done(false, "掛效果失敗:" + r + " " + MIXER_HINT);
+      }
+    });
+  }
+
   $("applyVst").addEventListener("click", function () {
     setAfterButtons(false);
     afterSay("嘗試把降噪掛到目前序列…", true);
-    vstEffectName(function (name) {
-      if (!name) {
-        afterSay("設定裡沒有 VST 外掛路徑。" + MIXER_HINT, false);
-        setAfterButtons(true); return;
-      }
-      // 音樂段不掛降噪(降噪是衝著人聲設計的,會把音樂當噪音削掉)
-      cs.evalScript('prApplyAudioEffect("' + name + '","音樂")', function (r) {
-        if (r && r.indexOf("OK") === 0) {
-          var parts = r.split(" ");
-          afterSay("已掛到 " + parts[1] + " 個聲音片段 ✓ 到「效果控制」隨時調整;" +
-            "不滿意可 Ctrl+Z 復原", true);
-        } else if (r === "NOFX") {
-          afterSay("Premiere 效果清單裡找不到「" + name + "」。" + MIXER_HINT, false);
-        } else {
-          afterSay("掛效果失敗:" + r + " " + MIXER_HINT, false);
-        }
+    withValues(function (v) {
+      applyDenoise(v, function (ok, msg) {
+        afterSay(msg, ok);
         setAfterButtons(true);
       });
     });
   });
+
+  // ---------- 剪完之後自動接手的事 ----------
+  // 兩件本來都要你手動按的事:打開報告、把降噪掛上去。
+  // 降噪只有在「沒烘進音檔」時才需要掛 —— 那種情況下新序列是原始聲音,
+  // 不掛等於沒降噪,而每剪一次就要手動按一次實在很煩。
+  function runAutoSteps(video, say) {
+    withValues(function (v) {
+      if (!v) return;
+      if (v.AUTO_OPEN_REPORT !== false) openReportFor(video, true);
+
+      var needDenoise = v.AUTO_APPLY_DENOISE !== false
+        && v.AUDIO_MODE === "vst"
+        && v.VST_BAKE === false
+        && v.VST_CHAIN && v.VST_CHAIN.length;
+      if (!needDenoise) return;
+
+      applyDenoise(v, function (ok, msg) {
+        // 失敗不是災難(剪輯結果好好的),所以只補一句說明,不改成紅色錯誤
+        say(ok ? ";" + msg : ";自動掛降噪沒成功 —— " + msg, ok);
+      });
+    });
+  }
 
   // ---------- P5:用目前序列的實際版面產生字幕 ----------
   $("subsFromSeq").addEventListener("click", function () {
