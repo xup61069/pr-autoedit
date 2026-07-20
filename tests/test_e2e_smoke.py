@@ -113,14 +113,16 @@ def test_prompt_fits_token_budget():
     cfg.WHISPER_INITIAL_PROMPT = None
     tail = "你可以自己調整看看。"
 
-    # 每一類單選都要「完整放得下」,不該印出截斷警告
+    # 每一類單選都要「完整放得下」,而且還要留得下幾個個人術語 ——
+    # 光是選一類就跳截斷警告的話,警告會變成狼來了,你就不會再看它了。
     for cat in cfg.VOCAB_PRESETS:
-        cfg.VOCAB_CATEGORIES, cfg.CUSTOM_VOCAB = [cat], []
+        cfg.VOCAB_CATEGORIES = [cat]
+        cfg.CUSTOM_VOCAB = ["我的頻道名", "常用術語", "某某老師"]
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             p = _build_initial_prompt()
         assert "⚠" not in buf.getvalue(), \
-            f"教學類型「{cat}」的詞庫太長,單選就會被砍。請精簡它。"
+            f"教學類型「{cat}」的詞庫太長,選一類再加幾個個人術語就被砍了。請精簡它。"
         assert p.endswith(tail), f"「{cat}」的提示詞結尾不是標點示範句"
 
     # 最壞情況:全選 + 個人術語,仍不可超過上限,示範句仍在尾巴

@@ -134,16 +134,19 @@ def _build_initial_prompt() -> str:
     if not vocab:
         return demo
 
-    # 詞彙表能用的額度 = 總上限 - 示範句 - 「常見詞彙:」開頭
-    # (估算本身已經偏保守,不必再另外抓安全邊際)
-    budget = _PROMPT_TOKEN_BUDGET - _est_tokens(demo) - 6
-    kept, used = [], 0
+    # 一個一個加進去,每加一個就量「整句組好的樣子」有多長。
+    # 不用「總額度減一減」的算法:那樣得自己估分隔符號、開頭、句號的成本,
+    # 少算一點就會超標(頓號其實比想像中貴)。直接量成品最不會錯。
+    prefix, suffix = "常見詞彙:", "。"
+    kept: list[str] = []
     for t in vocab:
-        cost = _est_tokens(t) + 1          # +1 是分隔用的頓號
-        if used + cost > budget:
+        trial = prefix + "、".join(kept + [t]) + suffix + demo
+        if _est_tokens(trial) > _PROMPT_TOKEN_BUDGET:
             break
         kept.append(t)
-        used += cost
+
+    if not kept:                            # 極端情況:一個詞都塞不下
+        return demo
 
     if len(kept) < len(vocab):
         print(f"  ⚠ 詞彙表太長,這次只用了前 {len(kept)} 個(共 {len(vocab)} 個)。"
@@ -151,7 +154,7 @@ def _build_initial_prompt() -> str:
               "    想讓某些術語一定生效:減少「教學類型」的勾選數量,"
               "或把最重要的詞填進「我的額外術語」(它排最前面)。")
 
-    return "常見詞彙:" + "、".join(kept) + "。" + demo
+    return prefix + "、".join(kept) + suffix + demo
 
 
 def _transcribe_faster_whisper(audio_path: str) -> list[Word]:
