@@ -488,6 +488,7 @@
   }
 
   // ---------- 收集表單 -> 物件 ----------
+  // 表單上「目前」的所有值(給自動化步驟判斷用)
   function collectValues() {
     var out = {};
     Object.keys(controls).forEach(function (k) {
@@ -498,11 +499,29 @@
     return out;
   }
 
+  function sameAsDefault(a, b) {
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
+  // 只收「跟內建預設不一樣」的值 —— 這才是要存進 settings_local.json 的東西。
+  // 為什麼不整份存:整份存等於把當下的每一個預設值都釘死在你的個人設定裡,
+  // 以後程式改良了任何預設(例如冗詞清單加了新詞),你永遠吃不到。
+  function collectChangedValues() {
+    var defs = (settingsData && settingsData.defaults) || {};
+    var all = collectValues();
+    var out = {};
+    Object.keys(all).forEach(function (k) {
+      if (k in defs && sameAsDefault(all[k], defs[k])) return;
+      out[k] = all[k];
+    });
+    return out;
+  }
+
   // ---------- 儲存設定到 settings_local.json ----------
   function saveSettings(cb, msgId) {
     var msg = $(msgId || "saveMsg");
     if (!settingsData) { if (cb) cb(); return; }
-    var vals = collectValues();
+    var vals = collectChangedValues();
     var dst = path.join(PROJECT_DIR, "config", "settings_local.json");
     fs.writeFile(dst, JSON.stringify(vals, null, 2), { encoding: "utf8" }, function (err) {
       if (msg) {
