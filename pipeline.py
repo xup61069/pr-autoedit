@@ -235,6 +235,16 @@ def main():
     from core.models import Segment
 
     final_xml = os.path.join(work, "04_project.xml")
+    # 先把上一次的剪輯專案刪掉。
+    # 為什麼:萬一這次產生失敗,面板不能把「上一次的舊剪輯」當成這次的結果
+    # 匯進 Premiere ——那會讓你以為改的設定沒生效,卻看不到任何錯誤訊息。
+    # 寧可讓它明明白白地失敗,也不要安靜地給你錯的東西。
+    if os.path.exists(final_xml):
+        try:
+            os.remove(final_xml)
+        except OSError:
+            pass          # 被 Premiere 鎖住;下面寫入時一樣會失敗並報錯
+
     # 序列名稱帶上影片名:在 Premiere 專案裡一眼看得出是哪支片,
     # 面板重跑時也才能只覆蓋「這支片的」舊序列
     seq_name = f"{name} 活專案" if live else f"{name} 自動剪輯"
@@ -258,7 +268,15 @@ def main():
             if cfg.MUTE_SPEED_AUDIO and any(s.action == "speed" for s in segments):
                 mute_speed_audio_in_xml(final_xml, final_xml)
         except (FileNotFoundError, subprocess.CalledProcessError) as e:
-            print(f"  (auto-editor 尚未安裝或執行失敗,略過 XML:{e})")
+            # 這裡以前只印一行「略過 XML」就當作成功結束,結果面板照樣去匯入
+            # 上一次留下的舊檔 —— 看起來一切正常,實際上你這次的設定完全沒生效。
+            # 現在改成直接失敗,讓你當場就知道出事了。
+            sys.exit(
+                "\n剪輯引擎(auto-editor)沒有跑成功,這次沒有產生剪輯專案。\n"
+                f"  技術原因:{e}\n"
+                "  最常見的原因是它沒裝好。請在命令列執行:\n"
+                "      pip install auto-editor\n"
+                "  如果早就裝過,把上面「技術原因」那一整行複製下來回報。")
         sub_table = table
 
     subs = sub_table.build_subtitles(

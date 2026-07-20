@@ -82,6 +82,19 @@
   }
   function toFwd(p) { return String(p).replace(/\\/g, "/"); }
 
+  // 啟動 Python 失敗時的說明。
+  // 舊訊息叫人「去改 main.js 的 PYTHON」,但改版後正確的位置是
+  // config/panel.json,照舊訊息做只會白忙一場。這裡直接把目前用的路徑
+  // 印出來,你一眼就看得出它找錯地方了。
+  function pythonFailMsg(e) {
+    return "找不到 Python,沒辦法開始。\n" +
+      "  目前用的 Python:" + PYTHON + "\n" +
+      "  目前的專案資料夾:" + PROJECT_DIR + "\n" +
+      "  路徑不對的話,編輯 " + path.join(PROJECT_DIR, "config", "panel.json") +
+      " 裡的 python / project_dir 兩個欄位,存檔後重新載入面板。\n" +
+      "  (原始訊息:" + e.message + ")";
+  }
+
   // ---------- 頁面切換 ----------
   $("toAdv").addEventListener("click", function () {
     $("page-main").style.display = "none";
@@ -454,7 +467,8 @@
     proc.stdout.on("data", function (d) { appendLog(d.toString()); });
     proc.stderr.on("data", function (d) { appendLog(d.toString()); });
     proc.on("error", function (e) {
-      setStatus("無法啟動 Python:" + e.message + "(檢查 main.js 的 PYTHON / PROJECT_DIR)", "err");
+      setStatus("無法啟動 Python,詳見下方訊息", "err");
+      appendLog(pythonFailMsg(e) + "\n");
       $("run").disabled = false; $("pick").disabled = false;
     });
     proc.on("close", function (code) {
@@ -580,7 +594,9 @@
       proc.stdout.on("data", function (d) { appendLog(d.toString()); });
       proc.stderr.on("data", function (d) { appendLog(d.toString()); });
       proc.on("error", function (e) {
-        afterSay("無法啟動 Python:" + e.message, false); setAfterButtons(true);
+        afterSay("無法啟動 Python,詳見下方訊息", false);
+        appendLog(pythonFailMsg(e) + "\n");
+        setAfterButtons(true);
       });
       proc.on("close", function (code) {
         if (code !== 0) {
