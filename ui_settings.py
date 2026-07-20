@@ -213,6 +213,17 @@ FIELDS = [
      "tier": "advanced", "group": "其他微調", "min": 0, "max": 1, "step": 0.05,
      "soft": True,
      "hint": "停頓段前後各多留這麼多秒,避免切太緊把呼吸聲/氣音也切掉"},
+    {"key": "VIDEO_ENCODER", "label": "重新編碼用哪種格式", "type": "select",
+     "tier": "advanced", "group": "其他微調",
+     "options": ["auto", "av1_nvenc", "hevc_nvenc", "h264_nvenc",
+                 "libx265", "libx264"],
+     "hint": "大部分影片不會重新編碼(聲音混回去時畫面是無損複製的),"
+             "只有少數影片複製後會壞掉才需要重編。auto=自動挑最省空間又能用的"
+             "(建議)。指定的那個不能用時仍會自動換,不會失敗"},
+    {"key": "VIDEO_QUALITY", "label": "重新編碼的畫質", "type": "number",
+     "tier": "advanced", "group": "其他微調", "min": 15, "max": 35, "step": 1,
+     "soft": True,
+     "hint": "數字越小越漂亮、檔案越大。一般 20~28,23 是常用的甜蜜點"},
     {"key": "TARGET_LUFS", "label": "目標響度", "type": "number",
      "tier": "advanced", "group": "其他微調", "min": -30, "max": -6, "step": 0.5,
      "soft": True,

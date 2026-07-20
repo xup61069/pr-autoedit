@@ -190,6 +190,53 @@ def _writable_target(out_mp4: str) -> str:
     return cand
 
 
+# 重新編碼時的候選順序:越前面越省空間。
+# 每一個都是 (編碼器, 給人看的名字, 額外參數)
+_ENCODERS = [
+    ("av1_nvenc",  "顯卡 AV1(最省空間)",   ["-preset", "p5"]),
+    ("hevc_nvenc", "顯卡 H.265",            ["-preset", "p5"]),
+    ("h264_nvenc", "顯卡 H.264",            ["-preset", "p5"]),
+    ("libx265",    "CPU H.265(較慢)",      ["-preset", "medium"]),
+    ("libx264",    "CPU H.264(較慢)",      ["-preset", "medium"]),
+]
+
+
+def _encoder_ladder() -> list[tuple[str, str, list[str]]]:
+    """要依序嘗試哪些編碼器。
+
+    指定了特定編碼器就把它排第一,其餘當退路 —— 指定的那個在這台機器上
+    不能用時(例如顯卡太舊、或 ffmpeg 版本不認得),仍然編得出來,
+    只是會換一個並在訊息裡說明,不會讓整條管線失敗。"""
+    want = getattr(cfg, "VIDEO_ENCODER", "auto")
+    if want in ("auto", "", None):
+        return list(_ENCODERS)
+    first = [e for e in _ENCODERS if e[0] == want]
+    rest = [e for e in _ENCODERS if e[0] != want]
+    return first + rest
+
+
+# 各編碼器的畫質數字換算。
+#
+# 同一個「23」在不同編碼器代表的畫質完全不同,不能直接照抄 ——
+# 實測同一支 4K 片(以 H.265 cq23 為基準,SSIM 0.9922、3620 KB):
+#     AV1 cq23  ->  5327 KB(反而大了 47%!)
+#     AV1 cq30  ->  3253 KB(小 10%),SSIM 0.9915 幾乎一樣
+# 也就是說,AV1 要把數字調高才會發揮它省空間的優勢。
+# 沒有這個換算的話,「選 AV1 比較省空間」會變成一句錯的話。
+_QUALITY_OFFSET = {
+    "av1_nvenc": +7,     # AV1 的量化尺度不同,要往上加才對得上
+    "h264_nvenc": -2,    # H.264 效率較差,同樣數字會比較糊,往下補一點
+    "libx264": -2,
+}
+
+
+def _quality_args(encoder: str) -> list[str]:
+    """畫質參數。顯卡編碼器用 -cq、CPU 編碼器用 -crf,兩者不通用。"""
+    base = int(getattr(cfg, "VIDEO_QUALITY", 23))
+    q = str(max(0, min(51, base + _QUALITY_OFFSET.get(encoder, 0))))
+    return ["-cq", q] if encoder.endswith("_nvenc") else ["-crf", q]
+
+
 def mux_back(video_path: str, clean_wav: str, out_mp4: str) -> str:
     """把清理後的音訊混回影片。回傳實際寫出的檔案路徑(被 Premiere
     鎖住時會自動改名,呼叫端要用回傳值,不要用傳入的 out_mp4)。
@@ -211,25 +258,40 @@ def mux_back(video_path: str, clean_wav: str, out_mp4: str) -> str:
     if _video_stream_playable(out_mp4):
         return out_mp4
 
-    # 路線 2:複製後的檔壞了,改用 GPU 重新編碼
-    print("  (此影片無法無損複製,改用 GPU 重新編碼,約需數十秒...)")
-    try:
-        subprocess.run([
-            "ffmpeg", "-y", "-i", video_path, "-i", clean_wav,
-            "-map", "0:v", "-map", "1:a",
-            "-c:v", "hevc_nvenc", "-preset", "p5", "-cq", "23",
-            "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-shortest", out_mp4,
-        ], check=True, capture_output=True)
-    except subprocess.CalledProcessError:
-        # 路線 3:沒有 NVIDIA GPU 或 nvenc 不可用,退回 CPU(較慢)
-        print("  (GPU 編碼不可用,改用 CPU 編碼,可能較慢...)")
-        subprocess.run([
-            "ffmpeg", "-y", "-i", video_path, "-i", clean_wav,
-            "-map", "0:v", "-map", "1:a",
-            "-c:v", "libx265", "-preset", "medium", "-crf", "23",
-            "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-shortest", out_mp4,
-        ], check=True, capture_output=True)
-    return out_mp4
+    # 路線 2:複製後的檔壞了,只好重新編碼。
+    # 依序試候選編碼器,第一個「編得出來而且真的能播」的就用它。
+    # 不預先偵測硬體支不支援 —— 直接試最準:實測過某些機器
+    # 「編碼器清單裡有 AV1、顯卡也支援,但 ffmpeg 版本太舊就是編不出來」。
+    print("  (此影片無法無損複製,需要重新編碼)")
+    tried = []
+    for encoder, label, extra in _encoder_ladder():
+        print(f"  嘗試 {label}…")
+        try:
+            subprocess.run([
+                "ffmpeg", "-y", "-i", video_path, "-i", clean_wav,
+                "-map", "0:v", "-map", "1:a",
+                "-c:v", encoder, *extra, *_quality_args(encoder),
+                "-c:a", "aac", "-b:a", "192k", "-ac", "2",
+                "-shortest", out_mp4,
+            ], check=True, capture_output=True)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            tried.append(label)
+            continue
+        if not _video_stream_playable(out_mp4):
+            tried.append(label + "(編出來但讀不動)")
+            continue
+        if tried:
+            print(f"  改用「{label}」完成"
+                  f"(前面這些在這台機器上不能用:{'、'.join(tried)})")
+        else:
+            print(f"  用「{label}」完成")
+        return out_mp4
+
+    raise RuntimeError(
+        "所有影片編碼器都失敗了,沒辦法把聲音混回影片。\n"
+        f"  試過:{'、'.join(tried)}\n"
+        "  這通常代表 ffmpeg 安裝不完整。可以試著重裝:\n"
+        "      winget upgrade Gyan.FFmpeg")
 
 
 def clean_audio(video_path: str, work_dir: str) -> str:
