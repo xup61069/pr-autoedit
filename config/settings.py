@@ -374,8 +374,8 @@ PRESET_KEYS = [
 # 內建組合。沒列到的項目 = 用內建預設值,所以每個組合都是完整、明確的狀態
 # (套用之後你看到的就是這個組合的全貌,不會殘留上一個組合的設定)。
 SETTING_PRESETS = {
-    "標準(平衡)": {},
-    "剪很兇(跳接風格)": {
+    "標準": {},
+    "激進(跳接風格)": {
         "SILENCE_ACTION": "delete",
         "SILENCE_THRESHOLD_SEC": 0.3,
         "SILENCE_PADDING_SEC": 0.0,
@@ -383,10 +383,10 @@ SETTING_PRESETS = {
         "MICRO_TRIM_MIN_SEC": 0.2,
         "MICRO_TRIM_DB_BELOW_SPEECH": 26.0,
         "FILLER_ISOLATED_GAP_SEC": 0.2,
-        # 剪很兇也要保住示範畫面,但門檻抓嚴一點(滑鼠晃一下不算)
+        # 激進模式也要保住示範畫面,但門檻抓嚴一點(滑鼠晃一下不算)
         "MOTION_SENSITIVITY": 1.0,
     },
-    "保守(保留呼吸感)": {
+    "保守(保留換氣)": {
         "SILENCE_ACTION": "speed",
         "SILENCE_SPEED_FACTOR": 6.0,
         "SILENCE_THRESHOLD_SEC": 1.5,
@@ -396,7 +396,7 @@ SETTING_PRESETS = {
         "MICRO_TRIM_DB_BELOW_SPEECH": 18.0,
         "MOTION_SENSITIVITY": 0.3,        # 敏感一點,寧可加速也不剪掉
     },
-    "只縮停頓不剪內容": {
+    "完整保留(僅壓縮停頓)": {
         "SILENCE_ACTION": "speed",
         "SILENCE_SPEED_FACTOR": 12.0,
         "MICRO_TRIM": False,

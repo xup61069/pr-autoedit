@@ -347,10 +347,14 @@
       fieldMeta.push({ f: f, wrap: wrap });
     });
 
-    // 任何欄位改動都重算「哪些欄位/分組該顯示」
+    // 任何欄位改動都重算「哪些欄位/分組該顯示」,並自動存檔。
+    // 用具名函式:renderForm 會被重複呼叫(例如套用組合),
+    // 同一個函式重複註冊會被瀏覽器忽略,不會愈疊愈多。
     [$("formCommon"), $("formAdvanced")].forEach(function (c) {
       c.addEventListener("change", applyShowIf);
       c.addEventListener("input", applyShowIf);
+      c.addEventListener("change", autoSave);
+      c.addEventListener("input", autoSave);
     });
     applyShowIf();
   }
@@ -522,13 +526,17 @@
           }
           var del = document.createElement("button");
           del.className = "btn small ghost"; del.textContent = "✕";
-          del.addEventListener("click", function () { paths.splice(i, 1); renderRows(); });
+          del.addEventListener("click", function () {
+            paths.splice(i, 1); renderRows(); autoSave();
+          });
           row.appendChild(pi); row.appendChild(adj); row.appendChild(del);
           input.appendChild(row);
         });
         var add = document.createElement("button");
         add.className = "btn small ghost"; add.textContent = "+ 新增外掛";
-        add.addEventListener("click", function () { paths.push(""); renderRows(); });
+        add.addEventListener("click", function () {
+          paths.push(""); renderRows(); autoSave();
+        });
         input.appendChild(add);
       }
       renderRows();
@@ -549,6 +557,7 @@
           var i = picked.indexOf(cat);
           if (i >= 0) { picked.splice(i, 1); chip.classList.remove("on"); }
           else { picked.push(cat); chip.classList.add("on"); }
+          autoSave();      // 晶片不是表單元件,不會冒泡,要自己叫一次
         });
         input.appendChild(chip);
       });
@@ -601,8 +610,9 @@
     renderForm();                 // 用新值重畫表單
     fillPresetPicker();
     $("presetPick").value = name;
-    $("saveMsg").textContent = "已套用「" + name + "」,按儲存設定才會生效";
-    $("saveMsg").style.color = "#d9a441";
+    saveSettings(null, "saveMsg");
+    $("saveMsg").textContent = "已套用「" + name + "」";
+    $("saveMsg").style.color = "#2e8b57";
   });
 
   $("presetSave").addEventListener("click", function () {
@@ -709,8 +719,20 @@
       if (cb) cb(err);
     });
   }
-  $("save").addEventListener("click", function () { saveSettings(null, "saveMsg"); });
-  $("save2").addEventListener("click", function () { saveSettings(null, "saveMsg2"); });
+  // ---------- 自動儲存 ----------
+  // 改了就存,不用按按鈕。滑條會連續觸發事件,所以延遲一下再寫檔:
+  // 拖動過程中不會反覆寫入,放開手約半秒後才存一次。
+  var saveTimer = null;
+  function autoSave() {
+    if (!settingsData) return;
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () {
+      saveTimer = null;
+      // 兩頁共用同一份設定,哪一頁開著就把訊息顯示在那一頁
+      var onAdv = $("page-adv").style.display !== "none";
+      saveSettings(null, onAdv ? "saveMsg2" : "saveMsg");
+    }, 500);
+  }
 
   // ---------- 問外掛有沒有視窗介面(決定要不要顯示「調整」鈕) ----------
   var vstCapsCache = {}; // 路徑 -> caps,同一路徑只問一次
