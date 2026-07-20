@@ -92,7 +92,9 @@ def generate(timeline: Timeline, words: list[Word],
 
     rows = []
     for c in cuts:
-        color = "#c0392b" if c.confidence < cfg.MARKER_MAX_CONFIDENCE else "#7f8c8d"
+        # 用 CSS 變數而非寫死色碼,深色模式才不會出現看不清楚的字
+        color = ("var(--bad)" if c.confidence < cfg.MARKER_MAX_CONFIDENCE
+                 else "var(--muted)")
         badge = "需審閱" if c.confidence < cfg.MARKER_MAX_CONFIDENCE else "自動"
         rows.append(f"""
         <tr>
@@ -140,23 +142,71 @@ def generate(timeline: Timeline, words: list[Word],
 <html lang="zh-Hant"><head><meta charset="utf-8">
 <title>剪輯審閱報告</title>
 <style>
+  /* 配色用變數集中管理,深色模式只要換這一組值。
+     預設跟隨系統;右上角可手動切換並記住選擇。 */
+  :root {{
+    --bg: #ffffff; --fg: #2c2c2a; --panel: #f1efe8; --panel2: #f7f6f2;
+    --line: #dddddd; --muted: #666666; --ctx: #555555;
+    --accent: #2d6cdf; --good: #2e8b57; --bad: #c0392b; --markbg: #ffe08a;
+  }}
+  @media (prefers-color-scheme: dark) {{
+    :root:not([data-theme="light"]) {{
+      --bg: #1e1e1e; --fg: #dcdcdc; --panel: #2a2a2a; --panel2: #262626;
+      --line: #3a3a3a; --muted: #9a9a9a; --ctx: #b0b0b0;
+      --accent: #6aa3ff; --good: #6ec98a; --bad: #e88a80; --markbg: #6b5a1f;
+    }}
+  }}
+  :root[data-theme="dark"] {{
+    --bg: #1e1e1e; --fg: #dcdcdc; --panel: #2a2a2a; --panel2: #262626;
+    --line: #3a3a3a; --muted: #9a9a9a; --ctx: #b0b0b0;
+    --accent: #6aa3ff; --good: #6ec98a; --bad: #e88a80; --markbg: #6b5a1f;
+  }}
   body {{ font-family: system-ui, "Microsoft JhengHei", sans-serif;
-        max-width: 1000px; margin: 2rem auto; padding: 0 1rem; color: #2c2c2a; }}
+        max-width: 1000px; margin: 2rem auto; padding: 0 1rem;
+        background: var(--bg); color: var(--fg); }}
   h1 {{ font-size: 1.4rem; font-weight: 500; }}
-  .summary {{ background: #f1efe8; padding: 1rem; border-radius: 8px;
+  h2 {{ color: var(--fg); }}
+  .summary {{ background: var(--panel); padding: 1rem; border-radius: 8px;
             margin: 1rem 0; }}
   table {{ width: 100%; border-collapse: collapse; font-size: 14px; }}
-  th, td {{ text-align: left; padding: 8px 10px; border-bottom: 1px solid #ddd; }}
-  th {{ background: #f7f6f2; font-weight: 500; }}
-  .ctx {{ color: #555; }}
-  .tc {{ font-variant-numeric: tabular-nums; color: #2d6cdf; font-weight: 500; }}
-  mark {{ background: #ffe08a; padding: 0 2px; }}
+  th, td {{ text-align: left; padding: 8px 10px;
+          border-bottom: 1px solid var(--line); }}
+  th {{ background: var(--panel2); font-weight: 500; }}
+  .ctx {{ color: var(--ctx); }}
+  .tc {{ font-variant-numeric: tabular-nums; color: var(--accent);
+       font-weight: 500; }}
+  mark {{ background: var(--markbg); color: var(--fg); padding: 0 2px; }}
   .stats {{ display: flex; gap: 1.5rem; flex-wrap: wrap; margin: 0.5rem 0 1rem; }}
-  .stat {{ background: #f1efe8; padding: 0.7rem 1.1rem; border-radius: 8px; }}
+  .stat {{ background: var(--panel); padding: 0.7rem 1.1rem; border-radius: 8px; }}
   .stat .num {{ font-size: 1.4rem; font-weight: 600; }}
-  .stat .lbl {{ font-size: 12px; color: #666; }}
-  .stat.hi .num {{ color: #2e8b57; }}
+  .stat .lbl {{ font-size: 12px; color: var(--muted); }}
+  .stat.hi .num {{ color: var(--good); }}
+  .themebtn {{ position: fixed; top: 12px; right: 12px; z-index: 9;
+             background: var(--panel); color: var(--fg);
+             border: 1px solid var(--line); border-radius: 6px;
+             padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer; }}
 </style></head><body>
+<button class="themebtn" id="themebtn">深色 / 淺色</button>
+<script>
+  (function () {{
+    var root = document.documentElement;
+    var saved = null;
+    try {{ saved = localStorage.getItem("pr_report_theme"); }} catch (e) {{}}
+    if (saved) root.setAttribute("data-theme", saved);
+    document.getElementById("themebtn").addEventListener("click", function () {{
+      // 沒手動選過就先看系統目前是深是淺,再切到相反的那個
+      var cur = root.getAttribute("data-theme");
+      if (!cur) {{
+        cur = window.matchMedia
+          && window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark" : "light";
+      }}
+      var next = cur === "dark" ? "light" : "dark";
+      root.setAttribute("data-theme", next);
+      try {{ localStorage.setItem("pr_report_theme", next); }} catch (e) {{}}
+    }});
+  }})();
+</script>
 <h1>剪輯審閱報告</h1>
 <div class="stats">
   <div class="stat hi"><div class="num">{tc(saved_frames)}</div><div class="lbl">{"套用建議後預計省下" if live else "省下的時間"}({saved_pct:.0f}%)</div></div>

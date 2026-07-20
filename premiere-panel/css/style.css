@@ -114,9 +114,13 @@ h1 {
   font-family: inherit;
 }
 .field textarea { resize: vertical; min-height: 44px; }
-.field.bool { display: flex; align-items: center; gap: 7px; }
-.field.bool > label { margin: 0; order: 2; }
-.field.bool input { width: auto; }
+/* 勾選項:核取方塊 → 標題 → 說明(說明自己佔一整行)。
+   order 一定要三個都指定:只指定標題的話,沒指定的說明會跟核取方塊
+   同屬 order 0 而排到標題前面,變成「說明在前、標題在後」。 */
+.field.bool { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.field.bool > input { width: auto; order: 1; flex: none; }
+.field.bool > label { margin: 0; order: 2; flex: 1; }
+.field.bool > .fhint { order: 3; flex-basis: 100%; margin-top: 3px; }
 .cats { display: flex; flex-wrap: wrap; gap: 6px; }
 .cat {
   font-size: 0.92em; padding: 4px 10px; border-radius: 12px; cursor: pointer;

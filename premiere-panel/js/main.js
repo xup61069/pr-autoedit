@@ -1055,21 +1055,11 @@
       if (!v) return;
       if (v.AUTO_OPEN_REPORT !== false) openReportFor(video, true);
 
-      // 這條序列需不需要你自己把降噪掛上去?
-      // 降噪沒烘進音檔時,新序列聽到的是原始錄音,不掛就等於沒降噪。
+      // 降噪沒烘進音檔時,新序列聽到的是原始錄音 —— 提醒你掛一次。
+      // 刻意「不」自動掛:那是每片段一個實例,會把顯示卡記憶體吃爆。
       var wantsDenoise = v.AUDIO_MODE === "vst" && v.VST_BAKE === false
         && v.VST_CHAIN && v.VST_CHAIN.length;
-      if (!wantsDenoise) return;
-
-      if (v.AUTO_APPLY_DENOISE !== true) {
-        // 預設走這條:不自動掛(每片段一個實例會吃爆顯卡記憶體),只提醒一次
-        say(";還沒降噪 —— " + MIXER_HINT, true);
-        return;
-      }
-      applyDenoise(v, function (ok, msg) {
-        // 失敗不是災難(剪輯結果好好的),所以只補一句說明,不改成紅色錯誤
-        say(ok ? ";" + msg : ";自動掛降噪沒成功 —— " + msg, ok);
-      });
+      if (wantsDenoise) say(";尚未降噪 —— " + MIXER_HINT, true);
     });
   }
 
