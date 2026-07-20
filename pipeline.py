@@ -265,6 +265,7 @@ def main():
         words,
         max_chars=cfg.SUBTITLE_MAX_CHARS,
         max_gap_frames=round(cfg.SUBTITLE_MAX_GAP_SEC * fps),
+        max_chars_no_punct=getattr(cfg, "SUBTITLE_MAX_CHARS_NO_PUNCT", None),
     )
     write_srt(subs, fps, os.path.join(work, "04_subtitles.srt"))
     gen_report(timeline, words, table, os.path.join(work, "04_report.html"),

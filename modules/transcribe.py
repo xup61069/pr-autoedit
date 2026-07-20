@@ -88,10 +88,20 @@ def effective_vocab() -> list[str]:
 
 def _build_initial_prompt() -> str:
     """組出給辨識引擎的開場提示詞。
-    優先用完全自訂的 WHISPER_INITIAL_PROMPT;否則用教學類型 + 個人術語自動組。"""
+    優先用完全自訂的 WHISPER_INITIAL_PROMPT;否則用教學類型 + 個人術語自動組。
+
+    ⚠️ 提示詞裡一定要有「帶標點的示範句」。Whisper 會模仿提示詞的書寫風格:
+    提示詞沒標點,它就吐出一整片沒有標點的字,字幕斷行只能靠停頓和字數硬切,
+    句子會被切得很怪。實測同一段音訊、同一個模型:
+        「以下是一段中文教學影片的口白。」        -> 0 個句號、2 個逗號
+        加上帶標點的示範句                       -> 10 個句號、24 個逗號
+    以前詞彙表那串「A、B、C。」剛好起了示範作用,所以詞彙表一清空就破功。
+    現在把示範句寫死在基底,不管有沒有詞彙表都保證有標點。"""
     if getattr(cfg, "WHISPER_INITIAL_PROMPT", None):
         return cfg.WHISPER_INITIAL_PROMPT
-    base = "以下是一段中文教學影片的口白。"
+    base = ("以下是一段中文教學影片的口白,內容標示標點符號。"
+            "例如:今天我們來看這個設定,它會影響聲音的表現,"
+            "你可以自己調整看看。")
     vocab = effective_vocab()
     if vocab:
         base += "常見詞彙:" + "、".join(vocab) + "。"

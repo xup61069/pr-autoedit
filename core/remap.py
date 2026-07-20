@@ -126,7 +126,9 @@ class RemapTable:
 
     def build_subtitles(self, words: list[Word],
                         max_chars: int = 18,
-                        max_gap_frames: int = 15) -> list[SubtitleLine]:
+                        max_gap_frames: int = 15,
+                        max_chars_no_punct: Optional[int] = None
+                        ) -> list[SubtitleLine]:
         """把詞級時間戳轉成字幕行。
 
         斷行優先順序:句末標點(。!?)> 原始說話的明顯停頓 >
@@ -137,6 +139,15 @@ class RemapTable:
         剪掉一個 0.3 秒的冗詞不該把字幕硬切成兩行(會剁得很碎),
         但剪掉一大段靜音後,前後兩句本來就隔了很久,仍然要分行——
         看原始停頓,兩種情況自然都對。"""
+        # 逐字稿幾乎沒有標點時(某些引擎、或提示詞沒示範標點),
+        # 唯一能斷行的線索只剩停頓和字數。這時行長上限要收短一點,
+        # 否則會出現「一整串三四十個字、結尾還斷在『所以』」的爛斷行。
+        if max_chars_no_punct:
+            marked = sum(1 for w in words
+                        if w.text and w.text[-1] in self._SENT_END + self._CLAUSE_END)
+            if words and marked / len(words) < 0.02:
+                max_chars = min(max_chars, max_chars_no_punct)
+
         lines: list[SubtitleLine] = []
         buf: list[str] = []
         line_start: Optional[int] = None

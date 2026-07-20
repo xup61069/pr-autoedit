@@ -82,5 +82,23 @@ def main():
     print("\n端到端主幹跑通 ✓  產物在 output/_smoke/")
 
 
+def test_prompt_always_demonstrates_punctuation():
+    """提示詞一定要帶標點示範句。
+
+    Whisper 會模仿提示詞的書寫風格:提示詞沒標點,它就吐出一整片沒標點的字,
+    字幕斷行只能靠停頓硬切、句子被切得很怪。以前是靠詞彙表那串「A、B、C。」
+    間接示範,詞彙表一清空就破功(實測 0 個句號)。這個測試守住基底提示詞。"""
+    from modules.transcribe import _build_initial_prompt
+    old_vocab = cfg.VOCAB_CATEGORIES, cfg.CUSTOM_VOCAB, cfg.WHISPER_INITIAL_PROMPT
+    cfg.WHISPER_INITIAL_PROMPT = None
+    for cats, custom in [([], []), (["剪輯"], ["我的頻道"])]:
+        cfg.VOCAB_CATEGORIES, cfg.CUSTOM_VOCAB = cats, custom
+        p = _build_initial_prompt()
+        assert p.count("。") >= 2 and ("," in p or "," in p),             f"提示詞缺少標點示範:{p}"
+    cfg.VOCAB_CATEGORIES, cfg.CUSTOM_VOCAB, cfg.WHISPER_INITIAL_PROMPT = old_vocab
+    print("  ✓ 提示詞帶標點示範句(有無詞彙表都是)")
+
+
 if __name__ == "__main__":
     main()
+    test_prompt_always_demonstrates_punctuation()

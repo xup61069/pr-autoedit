@@ -64,6 +64,7 @@ def build_from_layout(layout_json: str, work_dir: str) -> str:
         words,
         max_chars=cfg.SUBTITLE_MAX_CHARS,
         max_gap_frames=round(cfg.SUBTITLE_MAX_GAP_SEC * fps),
+        max_chars_no_punct=getattr(cfg, "SUBTITLE_MAX_CHARS_NO_PUNCT", None),
     )
     # 使用者可能移動過片段順序,字幕行依時間軸時間重排、重新編號
     subs.sort(key=lambda ln: ln.start_frame)

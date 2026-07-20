@@ -155,6 +155,10 @@ MICRO_TRIM_PROTECT_WORDS = True
 
 SUBTITLE_MAX_CHARS = 18          # 每行最多中文字數
 SUBTITLE_MAX_GAP_SEC = 0.5       # 詞間隔超過這個秒數就換行
+
+# 保險:逐字稿幾乎沒有標點時改用這個(比較短的)行長上限。
+# 沒標點時只能靠停頓和字數斷行,行太長會斷在很怪的地方。
+SUBTITLE_MAX_CHARS_NO_PUNCT = 20
 CONVERT_TO_TRADITIONAL = True    # OpenCC 簡轉繁
 
 # ============================================================

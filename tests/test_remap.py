@@ -236,6 +236,35 @@ def test_fully_cut_word_dropped():
     print("  ✓ 整個被剪掉的詞不出現在字幕")
 
 
+def test_no_punct_uses_shorter_lines():
+    """逐字稿沒有標點時,自動改用比較短的行長上限。
+
+    沒標點就只能靠停頓和字數斷行,行放太長會斷在很怪的地方
+    (實測出現過 52 個字、結尾斷在「所以」的行)。"""
+    table = RemapTable([Segment(0, 600, "keep")], fps=30)
+    # 30 個沒有標點的詞,詞間無停頓
+    words = [Word("字", i * 0.4, i * 0.4 + 0.4) for i in range(30)]
+    long_lines = table.build_subtitles(words, max_chars=40, max_gap_frames=15)
+    short_lines = table.build_subtitles(words, max_chars=40, max_gap_frames=15,
+                                        max_chars_no_punct=10)
+    assert max(len(l.text) for l in long_lines) > 10
+    assert max(len(l.text) for l in short_lines) <= 10, "沒標點時應改用短行長"
+    print("  ✓ 沒有標點時自動縮短每行字數")
+
+
+def test_punct_keeps_normal_line_limit():
+    """逐字稿有標點時,維持使用者設定的行長,不要被保險機制縮短"""
+    table = RemapTable([Segment(0, 600, "keep")], fps=30)
+    words = []
+    for i in range(10):
+        words.append(Word("這是測試", i * 0.8, i * 0.8 + 0.4))
+        words.append(Word("句子,", i * 0.8 + 0.4, i * 0.8 + 0.8))
+    lines = table.build_subtitles(words, max_chars=40, max_gap_frames=15,
+                                  max_chars_no_punct=10)
+    assert max(len(l.text) for l in lines) > 10, "有標點時不該縮短行長"
+    print("  ✓ 有標點時維持原本的行長設定")
+
+
 if __name__ == "__main__":
     print("執行重映射引擎測試...")
     test_keep_only()
@@ -250,4 +279,6 @@ if __name__ == "__main__":
     test_ntsc_no_drift()
     test_partial_cut_word_keeps_subtitle()
     test_fully_cut_word_dropped()
+    test_no_punct_uses_shorter_lines()
+    test_punct_keeps_normal_line_limit()
     print("\n全部通過 ✓  地基正確,可以往上蓋。")
