@@ -18,6 +18,7 @@
 from __future__ import annotations
 import subprocess, os, sys, contextlib, hashlib
 import config.settings as cfg
+from modules.workspace import wpath
 
 
 # VoiceFX 的「消除模式」白話 → 外掛實際吃的英文值。中英都收,容錯。
@@ -236,9 +237,9 @@ def clean_audio(video_path: str, work_dir: str) -> str:
 
     注意:這一步『不』混回影片。混音留到決策引擎算完靜音段之後,
     才能一併把快轉段的聲音抹掉(見 gate_speed_audio 與 pipeline)。"""
-    raw_wav = os.path.join(work_dir, "01_raw.wav")
-    clean_wav = os.path.join(work_dir, "01_clean.wav")
-    norm_wav = os.path.join(work_dir, "01_clean_norm.wav")
+    raw_wav = wpath(work_dir, "01_raw.wav")
+    clean_wav = wpath(work_dir, "01_clean.wav")
+    norm_wav = wpath(work_dir, "01_clean_norm.wav")
 
     extract_audio(video_path, raw_wav)
 

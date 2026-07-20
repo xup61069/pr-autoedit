@@ -6,13 +6,14 @@
     python pipeline.py 你的影片.mp4 --fps 29.97
     python pipeline.py 你的影片.mp4 --skip-audio   (音訊已清理過,只重跑後段)
 
-產物(全部在 output/ 底下,以影片檔名分資料夾):
-    01_clean_av.mp4      音訊清理後、混回影片
-    02_transcript.json   詞級轉錄(快取;調剪輯參數免重轉,改辨識設定會自動重轉)
-    03_timeline.json     決策引擎輸出的段落清單
+產物(全部在 output/影片名/ 底下)。最外層只放你會用到的四個:
+    04_report.html       審閱報告(先開這個掃一遍)
     04_project.xml       帶 marker 的 Premiere 專案(匯入這個)
-    04_subtitles.srt     重映射後的繁體字幕(拖進字幕軌)
-    04_report.html       審閱報告(進 PR 前先掃這個)
+    04_subtitles.srt     重映射後的繁體字幕
+    01_clean_av.mp4      混好聲音的影片(專案引用的素材,別搬走)
+
+其餘全是程式自用的中繼檔,收在 _work/ 子資料夾,不用理它
+(音軌、轉錄快取、決策結果…;整個刪掉也沒關係,只是下次要重跑辨識)。
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ for _stream in (sys.stdout, sys.stderr):
 from core.models import Timeline
 from core.decision import build_segments
 from core.remap import RemapTable
+from modules.workspace import wpath, prepare as prepare_workspace, tidy
 import config.settings as cfg
 
 
@@ -119,15 +121,17 @@ def main():
     name = os.path.splitext(os.path.basename(args.video))[0]
     work = os.path.join("output", name)
     os.makedirs(work, exist_ok=True)
+    # 建好中繼檔資料夾,順便把舊版平鋪在外層的中繼檔搬進去
+    prepare_workspace(work)
 
     fps = args.fps or get_fps(args.video)
     print(f"\n=== 處理 {name}(fps={fps})===\n")
 
     # --- 1. 音訊清理(只清理,先不混回影片)---
-    clean_mp4 = os.path.join(work, "01_clean_av.mp4")
-    norm_wav = os.path.join(work, "01_clean_norm.wav")
-    raw_wav = os.path.join(work, "01_raw.wav")
-    audio_info = os.path.join(work, "01_audio_info.json")
+    clean_mp4 = wpath(work, "01_clean_av.mp4")
+    norm_wav = wpath(work, "01_clean_norm.wav")
+    raw_wav = wpath(work, "01_raw.wav")
+    audio_info = wpath(work, "01_audio_info.json")
     audio_fp = audio_fingerprint()
     skip = args.skip_audio and (os.path.exists(norm_wav) or os.path.exists(raw_wav))
     if skip:
@@ -154,7 +158,7 @@ def main():
     # --- 2. 轉錄 ---
     print("[2/5] 語音轉錄")
     from modules.transcribe import transcribe
-    cache = os.path.join(work, "02_transcript.json")
+    cache = wpath(work, "02_transcript.json")
     audio_for_asr = clean_wav if os.path.exists(clean_wav) else args.video
     words = transcribe(audio_for_asr, cache_json=cache)
 
@@ -221,7 +225,7 @@ def main():
     if (not live) and cfg.MUTE_SPEED_AUDIO \
             and any(s.action == "speed" for s in segments):
         audio_for_mux = gate_speed_audio(
-            clean_wav, os.path.join(work, "01_clean_gated.wav"), segments, fps)
+            clean_wav, wpath(work, "01_clean_gated.wav"), segments, fps)
 
     # 混音內容的「指紋」= 要混進去的音訊檔內容 + 哪幾段被消音。
     # 指紋跟上次一樣就沿用上次混好的影片:
@@ -237,7 +241,7 @@ def main():
     gated = "" if audio_for_mux == clean_wav else ",".join(
         f"{s.start}-{s.end}" for s in segments if s.action == "speed")
     fingerprint = f"{_file_md5(audio_for_mux)}|{gated}"
-    mux_info = os.path.join(work, "01_mux_info.json")
+    mux_info = wpath(work, "01_mux_info.json")
     actual_mp4 = None
     if os.path.exists(mux_info):
         try:
@@ -261,7 +265,7 @@ def main():
     # timeline 要等混音完才能定案:source 必須指向「實際寫出」的影片檔
     timeline = Timeline(fps=fps, source=os.path.abspath(clean_mp4),
                         segments=segments)
-    timeline.to_json(os.path.join(work, "03_timeline.json"))
+    timeline.to_json(wpath(work, "03_timeline.json"))
 
     table = RemapTable(segments, fps)
 
@@ -271,7 +275,7 @@ def main():
     from modules.report import generate as gen_report
     from core.models import Segment
 
-    final_xml = os.path.join(work, "04_project.xml")
+    final_xml = wpath(work, "04_project.xml")
     # 先把上一次的剪輯專案刪掉。
     # 為什麼:萬一這次產生失敗,面板不能把「上一次的舊剪輯」當成這次的結果
     # 匯進 Premiere ——那會讓你以為改的設定沒生效,卻看不到任何錯誤訊息。
@@ -300,10 +304,10 @@ def main():
         from modules.premiere_xml import (build_v1_timeline, export_premiere_xml,
                                            insert_markers, mute_speed_audio_in_xml)
         v1 = build_v1_timeline(timeline,
-                               os.path.join(work, "03_timeline.v1.json"))
+                               wpath(work, "03_timeline.v1.json"))
         try:
             raw_xml = export_premiere_xml(
-                v1, os.path.join(work, "04_project_raw.xml"))
+                v1, wpath(work, "04_project_raw.xml"))
             insert_markers(raw_xml, table, final_xml, sequence_name=seq_name)
             # 快轉段消音:把帶變速濾鏡的音訊片段停用(最可靠)
             if cfg.MUTE_SPEED_AUDIO and any(s.action == "speed" for s in segments):
@@ -326,11 +330,12 @@ def main():
         max_gap_frames=round(cfg.SUBTITLE_MAX_GAP_SEC * fps),
         max_chars_no_punct=getattr(cfg, "SUBTITLE_MAX_CHARS_NO_PUNCT", None),
     )
-    write_srt(subs, fps, os.path.join(work, "04_subtitles.srt"))
-    gen_report(timeline, words, table, os.path.join(work, "04_report.html"),
+    write_srt(subs, fps, wpath(work, "04_subtitles.srt"))
+    gen_report(timeline, words, table, wpath(work, "04_report.html"),
                live=live)
 
     # --- 5. 完成 ---
+    tidy(work)          # 清掉純中繼的半成品音檔,省硬碟
     print(f"\n[5/5] 完成 ✓  產物在 {work}/")
     print("  下一步:先開 04_report.html 掃一遍,再把 04_project.xml 匯入 Premiere")
     if live:

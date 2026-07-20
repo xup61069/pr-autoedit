@@ -138,7 +138,49 @@ def test_prompt_fits_token_budget():
     print("  ✓ 提示詞不超長、示範句在尾巴、個人術語不被犧牲")
 
 
+def test_workspace_tidies_output():
+    """output 資料夾最外層只留「你會打開的」,中繼檔收進 _work/。
+
+    重點是搬移不能弄丟轉錄快取 —— 那是最花時間的一步,
+    弄丟就要重跑好幾分鐘的語音辨識。"""
+    import tempfile, shutil
+    from modules.workspace import prepare, wpath, INTERNAL_DIR
+
+    d = tempfile.mkdtemp(prefix="ws_test_")
+    try:
+        # 模擬舊版:所有檔案平鋪在最外層
+        old_files = ["01_clean_av.mp4", "04_report.html", "04_project.xml",
+                     "04_subtitles.srt", "01_raw.wav", "02_transcript.json",
+                     "03_timeline.json", "01_mux_info.txt"]
+        for n in old_files:
+            with open(os.path.join(d, n), "w", encoding="utf-8") as f:
+                f.write("x" if n != "02_transcript.json" else "快取內容")
+
+        prepare(d)
+
+        outer = sorted(f for f in os.listdir(d) if f != INTERNAL_DIR)
+        assert outer == ["01_clean_av.mp4", "04_project.xml",
+                         "04_report.html", "04_subtitles.srt"], \
+            f"最外層應該只剩四個給人用的檔,實際是 {outer}"
+
+        # 轉錄快取要跟著搬進去,不能不見
+        cache = wpath(d, "02_transcript.json")
+        assert os.path.exists(cache), "轉錄快取在搬移過程中不見了"
+        with open(cache, encoding="utf-8") as f:
+            assert f.read() == "快取內容", "轉錄快取內容被弄壞了"
+
+        # 已淘汰的舊檔要清掉
+        assert not os.path.exists(os.path.join(d, "01_mux_info.txt"))
+
+        prepare(d)      # 重複執行不能出事(每次跑管線都會呼叫)
+        assert os.path.exists(cache)
+        print("  ✓ output 最外層只留四個檔、中繼檔歸位、快取沒弄丟")
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 if __name__ == "__main__":
     main()
     test_prompt_always_demonstrates_punctuation()
     test_prompt_fits_token_budget()
+    test_workspace_tidies_output()

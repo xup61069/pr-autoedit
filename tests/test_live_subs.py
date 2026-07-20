@@ -5,6 +5,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.models import Timeline, Segment
 from core.remap import RemapTable
 from modules.live_subs import build_from_layout
+from modules.workspace import wpath, prepare
 import config.settings as cfg
 
 # 鎖回預設參數,不受使用者 settings_local 覆寫影響(理由見 test_decision)
@@ -15,16 +16,17 @@ cfg.SUBTITLE_MAX_GAP_SEC = 0.5
 def _prep_workdir(fps=30.0):
     """做一個假的 output 資料夾:轉錄快取 + timeline(只為了 fps)"""
     d = tempfile.mkdtemp(prefix="live_subs_")
+    prepare(d)              # 中繼檔放 _work/,跟正式流程一致
     words = [
         {"text": "第一句話", "start": 1.0, "end": 2.0},
         {"text": "被刪的話", "start": 5.0, "end": 6.0},
         {"text": "第三句話", "start": 10.0, "end": 11.0},
     ]
-    with open(os.path.join(d, "02_transcript.json"), "w", encoding="utf-8") as f:
+    with open(wpath(d, "02_transcript.json"), "w", encoding="utf-8") as f:
         json.dump(words, f, ensure_ascii=False)
     Timeline(fps=fps, source="x.mp4",
              segments=[Segment(0, 600, "keep")]).to_json(
-        os.path.join(d, "03_timeline.json"))
+        wpath(d, "03_timeline.json"))
     return d
 
 
@@ -36,7 +38,7 @@ def test_deleted_clip_words_dropped():
         {"start": 0.0, "end": 4.0, "in": 0.0, "out": 4.0, "speed": 1.0},
         {"start": 4.0, "end": 8.0, "in": 8.0, "out": 12.0, "speed": 1.0},
     ]}
-    lp = os.path.join(d, "05_layout.json")
+    lp = wpath(d, "05_layout.json")
     with open(lp, "w", encoding="utf-8") as f:
         json.dump(layout, f)
     srt = build_from_layout(lp, d)
@@ -56,7 +58,7 @@ def test_speed_clip_compresses():
         {"start": 0.0, "end": 4.0, "in": 0.0, "out": 4.0, "speed": 1.0},
         {"start": 4.0, "end": 6.0, "in": 4.0, "out": 12.0, "speed": 4.0},
     ]}
-    lp = os.path.join(d, "05_layout.json")
+    lp = wpath(d, "05_layout.json")
     with open(lp, "w", encoding="utf-8") as f:
         json.dump(layout, f)
     srt = build_from_layout(lp, d)

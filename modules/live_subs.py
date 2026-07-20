@@ -27,6 +27,7 @@ from core.models import Timeline
 from core.remap import RemapTable
 from modules.transcribe import load_cached_words
 from modules.subtitles import write_srt
+from modules.workspace import wpath
 import config.settings as cfg
 
 
@@ -39,8 +40,8 @@ def build_from_layout(layout_json: str, work_dir: str) -> str:
         raise SystemExit("序列版面是空的(時間軸上沒有片段),無法產字幕。")
 
     # fps 與詞級轉錄都來自當初處理這支影片時的產物
-    tl_path = os.path.join(work_dir, "03_timeline.json")
-    tr_path = os.path.join(work_dir, "02_transcript.json")
+    tl_path = wpath(work_dir, "03_timeline.json")
+    tr_path = wpath(work_dir, "02_transcript.json")
     for p in (tl_path, tr_path):
         if not os.path.exists(p):
             raise SystemExit(f"找不到 {os.path.basename(p)}。\n"
@@ -71,7 +72,7 @@ def build_from_layout(layout_json: str, work_dir: str) -> str:
     for i, ln in enumerate(subs, 1):
         ln.index = i
 
-    out_srt = os.path.join(work_dir, "05_subtitles_final.srt")
+    out_srt = wpath(work_dir, "05_subtitles_final.srt")
     write_srt(subs, fps, out_srt)
     return out_srt
 

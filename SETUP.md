@@ -97,6 +97,8 @@ python pipeline.py D:\影片\我的教學_0718.mp4
 | `04_report.html` | **先開這個**,瀏覽器打開,掃一遍切點有沒有大面積誤判 |
 | `04_project.xml` | 匯入 Premiere 的專案(檔案 → 匯入) |
 | `04_subtitles.srt` | 拖進字幕軌 |
+| `01_clean_av.mp4` | 混好聲音的影片,是專案引用的素材。**別搬走或改名**,搬了序列會離線 |
+| `_work/` | 程式自己用的中繼檔(音軌、辨識快取…),不用理它。整個刪掉也沒關係,只是下次要重跑辨識,比較久 |
 
 ### 在 Premiere 裡的審閱流程
 1. 檔案 → 匯入 → 選 `04_project.xml`,會多出一條剪好的序列
@@ -125,7 +127,7 @@ python pipeline.py D:\影片\我的教學_0718.mp4
 > 手動改的可自建 `config\settings_local.py`(例:`CUSTOM_VOCAB = ["我的頻道名"]`)。
 > 兩者都蓋過預設值、不進版控、更新專案也不會被覆蓋。
 
-**調完重跑不用重新轉錄** —— 轉錄有快取(02_transcript.json),
+**調完重跑不用重新轉錄** —— 轉錄有快取(`_work/02_transcript.json`),
 改剪輯門檻重跑只會重算決策那步,幾秒就好:
 ```
 python pipeline.py D:\影片\我的教學_0718.mp4 --skip-audio
@@ -179,6 +181,7 @@ python pipeline.py D:\影片\我的教學_0718.mp4 --skip-audio
 **GPU 記憶體不足(out of memory)**
 → 把 `WHISPER_MODEL` 改成 `"medium"`,準確度略降但省一半記憶體。
 
-**auto-editor 相關錯誤導致沒產出 XML**
-→ 其他產物(字幕、報告)還是會出。先確認 `pip install auto-editor` 有成功。
-   XML 是審閱模式必要的,務必把這個裝好。
+**auto-editor 相關錯誤**
+→ 程式會直接停下來並說明,不會假裝成功(以前只印一行警告就結束,
+   面板會誤把上一次的舊剪輯匯進 Premiere,看起來像設定沒生效)。
+   照訊息執行 `pip install auto-editor` 即可。

@@ -805,7 +805,11 @@
     setAfterButtons(false);
     afterSay("讀取目前序列的版面…", true);
     var outDir = outDirOf(lastVideo);
-    var layout = toFwd(path.join(outDir, "05_layout.json"));
+    // 中繼檔放在 _work/ 子資料夾(見 modules/workspace.py),
+    // 最外層只留你會打開的東西
+    var workDir = path.join(outDir, "_work");
+    try { if (!fs.existsSync(workDir)) fs.mkdirSync(workDir); } catch (e) {}
+    var layout = toFwd(path.join(workDir, "05_layout.json"));
     cs.evalScript('prDumpSequenceLayout("' + layout + '")', function (r) {
       if (!r || r.indexOf("OK") !== 0) {
         afterSay("讀不到序列版面:" + r, false); setAfterButtons(true); return;
