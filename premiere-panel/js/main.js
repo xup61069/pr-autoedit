@@ -182,6 +182,49 @@
     }
   });
 
+  // ---------- 用 Premiere 裡選取的素材 ----------
+  var VIDEO_EXT_RE = /\.(mp4|mov|mkv|avi|m4v|mxf|mts|m2ts|wmv)$/i;
+
+  function useVideo(p, note) {
+    selectedVideo = p;
+    $("videoPath").textContent = p + (note || "");
+    $("run").disabled = false;
+  }
+
+  $("pickSelected").addEventListener("click", function () {
+    setStatus("讀取 Premiere 裡選取的素材…", "busy");
+    cs.evalScript("prGetSelectedMedia()", function (r) {
+      if (r === "NONE") {
+        setStatus("Premiere 裡沒有選取任何素材 —— "
+          + "請先到專案面板或時間軸點選一個影片,再按一次", "err");
+        return;
+      }
+      if (!r || r.indexOf("OK ") !== 0) {
+        setStatus("讀不到選取的素材:" + r, "err");
+        return;
+      }
+      var p = r.slice(3);
+      if (!fs.existsSync(p)) {
+        setStatus("這個素材的檔案找不到(可能已被移動或改名):" + p, "err");
+        return;
+      }
+      if (!VIDEO_EXT_RE.test(p)) {
+        setStatus("你選的不是影片檔(" + path.basename(p)
+          + ")—— 請改選原始錄影檔", "err");
+        return;
+      }
+      // 選到本工具自己產出的影片的話,剪出來的東西會是「剪過的再剪一次」,
+      // 幾乎一定不是你要的。這種錯很難自己看出來,所以直接擋下。
+      if (/[\\/]output[\\/]/i.test(p) && /01_clean_av/i.test(p)) {
+        setStatus("你選到的是本工具產生的影片(01_clean_av),不是原始錄影檔。"
+          + "請改選你自己錄的那支原片。", "err");
+        return;
+      }
+      useVideo(p, "(從 Premiere 選取)");
+      setStatus("已帶入 Premiere 選取的素材,可以開始自動剪輯", "ok");
+    });
+  });
+
   // ---------- 設定區摺疊(第一次展開才載入) ----------
   $("settingsHead").addEventListener("click", function () {
     var body = $("settingsBody");

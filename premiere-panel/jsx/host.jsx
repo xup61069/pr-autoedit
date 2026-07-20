@@ -154,6 +154,58 @@ function prImportCaptionsToActive(srtPath) {
     }
 }
 
+/* 一個素材項目對應到硬碟上的哪個檔案 */
+function prMediaPathOf(item) {
+    try {
+        if (item && item.getMediaPath) {
+            var p = item.getMediaPath();
+            if (p && String(p).length) return String(p);
+        }
+    } catch (e) { }
+    return null;
+}
+
+/*
+ * 找出「你現在選取的素材」是哪個檔案,讓面板不必再開檔案總管去翻。
+ * 先看專案面板裡選取的項目,沒有的話再看時間軸上選取的片段。
+ * 回傳 "OK <完整路徑>",沒選東西回 "NONE"。
+ */
+function prGetSelectedMedia() {
+    try {
+        if (typeof app === "undefined" || !app.project) {
+            return "ERROR: 沒有開啟中的 Premiere 專案";
+        }
+        var i, p;
+
+        // 1. 專案面板裡選取的素材
+        try {
+            var sel = app.getCurrentProjectViewSelection();
+            if (sel && sel.length) {
+                for (i = 0; i < sel.length; i++) {
+                    p = prMediaPathOf(sel[i]);
+                    if (p) return "OK " + p;
+                }
+            }
+        } catch (e1) { }
+
+        // 2. 時間軸上選取的片段
+        try {
+            var seq = app.project.activeSequence;
+            if (seq && seq.getSelection) {
+                var clips = seq.getSelection();
+                for (i = 0; i < clips.length; i++) {
+                    p = clips[i] ? prMediaPathOf(clips[i].projectItem) : null;
+                    if (p) return "OK " + p;
+                }
+            }
+        } catch (e2) { }
+
+        return "NONE";
+    } catch (e) {
+        return "ERROR: " + e.toString();
+    }
+}
+
 /* 匯入單一檔案(例如剪完後重新產生的字幕 SRT) */
 function prImportFile(p) {
     try {
