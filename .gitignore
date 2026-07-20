@@ -40,3 +40,6 @@ config/settings_local.py
 config/settings_local.json
 # VST 調好的參數狀態(個人、二進位,不進版控)
 config/vst_state/
+
+# 面板的個人路徑設定(安裝程式產生,不進版控)
+config/panel.json

@@ -14,18 +14,21 @@
 
 ## 安裝(只需做一次)
 
-1. **確認路徑**:打開 `js/main.js`,檢查最上面兩行是否符合你的電腦:
-   ```js
-   var PROJECT_DIR = "C:\\pr-autoedit";                         // 專案資料夾
-   var PYTHON      = "C:\\Users\\Administrator\\miniconda3\\python.exe"; // Python
-   ```
+**建議做法**:回到專案根目錄雙擊 **「安裝.bat」**,它會一併把 Python、
+ffmpeg、套件、面板全部裝好,路徑也自動填,不用手動設定任何東西。
+以下是想自己手動裝的做法。
 
-2. **開啟開發者模式**:雙擊執行 `enable-debug-mode.reg`(允許載入自製面板)。
+1. **開啟開發者模式**:雙擊執行 `enable-debug-mode.reg`(允許載入自製面板)。
 
-3. **安裝面板**:雙擊執行 `install.bat`(把本資料夾連結到 Premiere 擴充目錄)。
+2. **安裝面板**:雙擊執行 `install.bat`(把本資料夾連結到 Premiere 擴充目錄)。
 
-4. **重啟 Premiere Pro**,然後在選單:
-   `視窗 (Window) > 擴充功能 (Extensions) > PR 自動剪輯`
+3. **重啟 Premiere Pro**,然後在選單:
+   `視窗 (Window) > 擴充功能 (Extensions) > PR剪教學一條龍`
+
+> **路徑怎麼來的**:面板會自己找到專案資料夾(從自己的位置往上一層),
+> Python 則優先用專案裡的 `venv`。要手動指定的話,編輯
+> `config/panel.json` 的 `project_dir` / `python` 兩個欄位即可,
+> 不用再改 `js/main.js`。
 
 ## 使用
 

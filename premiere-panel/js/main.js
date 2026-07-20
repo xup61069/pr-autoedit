@@ -1,17 +1,52 @@
 (function () {
   "use strict";
 
-  // =====================================================================
-  //  設定 —— 依你的電腦調整這兩行(其餘不用動)
-  // =====================================================================
-  var PROJECT_DIR = "C:\\pr-autoedit";
-  var PYTHON = "C:\\Users\\Administrator\\miniconda3\\python.exe";
-  // =====================================================================
-
   var cs = new CSInterface();
   var cp = require("child_process");
   var fs = require("fs");
   var path = require("path");
+
+  // =====================================================================
+  //  專案資料夾與 Python 在哪?
+  //  一般人裝完就該直接能用,所以這裡全自動,不用改任何一行:
+  //    1. config/panel.json —— 安裝程式寫進去的(最準)
+  //    2. 自動偵測 —— 面板資料夾的上一層就是專案;venv 裡就有 Python
+  //    3. 最後退路 —— 交給系統 PATH 上的 python
+  //  想手動指定就編輯 config/panel.json 的 project_dir / python。
+  // =====================================================================
+
+  // 面板是用 junction 連過去的,要用 realpath 解開才拿得到真正的專案位置
+  function detectProjectDir() {
+    try {
+      var real = fs.realpathSync(cs.getSystemPath(SystemPath.EXTENSION));
+      var parent = path.dirname(real);
+      if (fs.existsSync(path.join(parent, "pipeline.py"))) return parent;
+    } catch (e) {}
+    return null;
+  }
+
+  function detectPython(dir) {
+    var cands = [
+      path.join(dir, "venv", "Scripts", "python.exe"),
+      path.join(dir, ".venv", "Scripts", "python.exe"),
+    ];
+    for (var i = 0; i < cands.length; i++) {
+      try { if (fs.existsSync(cands[i])) return cands[i]; } catch (e) {}
+    }
+    return "python";        // 沒有虛擬環境就用系統上的 Python
+  }
+
+  var PROJECT_DIR = detectProjectDir() || "C:\\pr-autoedit";
+  var PYTHON = null;
+  try {
+    var cfgFile = path.join(PROJECT_DIR, "config", "panel.json");
+    if (fs.existsSync(cfgFile)) {
+      var saved = JSON.parse(fs.readFileSync(cfgFile, "utf8"));
+      if (saved.project_dir) PROJECT_DIR = saved.project_dir;
+      if (saved.python) PYTHON = saved.python;
+    }
+  } catch (e) {}
+  if (!PYTHON) PYTHON = detectPython(PROJECT_DIR);
 
   var selectedVideo = null;
   var settingsData = null;   // ui_settings.py dump 的結果
