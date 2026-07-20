@@ -261,6 +261,22 @@ TARGET_TRUE_PEAK = -1.0
 
 
 # ============================================================
+# 預設值快照
+# ============================================================
+# 在套用任何個人覆寫「之前」,先把上面這些內建預設值原封不動記一份。
+# 有了它才回答得出兩個問題:
+#   1. 面板「點兩下恢復預設」要回到哪個值(以前是在 ui_settings.py 手抄一份,
+#      改了這裡忘了改那裡就會對不上);
+#   2. 審閱報告的「這次的設定跟預設差在哪」。
+import copy as _copy
+DEFAULTS = {_k: _copy.deepcopy(_v) for _k, _v in list(globals().items())
+            if _k.isupper()}
+
+# 這兩個是「關於設定的設定」,不接受個人覆寫,否則會把快照本身蓋掉
+_META_KEYS = ("DEFAULTS", "OVERRIDDEN")
+
+
+# ============================================================
 # 個人覆寫(選用)
 # ============================================================
 # 若在 config/ 底下建立一個 settings_local.py,裡面所有「全大寫」的設定
@@ -274,7 +290,7 @@ TARGET_TRUE_PEAK = -1.0
 try:
     from config import settings_local as _local
     for _name in dir(_local):
-        if _name.isupper():
+        if _name.isupper() and _name not in _META_KEYS:
             globals()[_name] = getattr(_local, _name)
 except ImportError:
     pass
@@ -287,7 +303,13 @@ if _os.path.exists(_json_path):
     try:
         with open(_json_path, "r", encoding="utf-8") as _f:
             for _k, _v in _json.load(_f).items():
-                if _k.isupper():
+                if _k.isupper() and _k not in _META_KEYS:
                     globals()[_k] = _v
     except (ValueError, OSError):
         pass
+
+# 哪些設定被你改過(跟內建預設不同)。審閱報告用它列出「本次設定摘要」,
+# 讓你事後回頭看得出「那條序列當時是用什麼數字剪的」。
+OVERRIDDEN = sorted(_k for _k, _v in globals().items()
+                    if _k.isupper() and _k not in _META_KEYS
+                    and _k in DEFAULTS and _v != DEFAULTS[_k])
