@@ -10,9 +10,18 @@
   <div id="page-main">
     <h1>PR剪教學一條龍</h1>
 
+    <div class="prefbar">
+      <span>字級</span>
+      <button class="sizebtn" data-scale="1">小</button>
+      <button class="sizebtn" data-scale="1.25">中</button>
+      <button class="sizebtn" data-scale="1.55">大</button>
+      <span class="spacer"></span>
+      <label><input type="checkbox" id="soundOn" checked> 完成時發出提示音</label>
+    </div>
+
     <button id="pick" class="btn">1. 選擇影片</button>
     <button id="pickSelected" class="btn small ghost">用 Premiere 裡選取的素材</button>
-    <div class="hint">在專案面板或時間軸點選一個素材,再按這顆,就不用去檔案總管翻。</div>
+    <div class="hint">在 Premiere 裡點選素材再按這顆,不用去檔案總管翻。</div>
     <div id="videoPath" class="path">尚未選擇影片</div>
 
     <!-- 設定區(常用) -->
@@ -55,6 +64,9 @@
         <button id="subsFromSeq" class="btn">用目前序列產生字幕</button>
         <div class="hint">在 Premiere 剪完之後按這顆:依時間軸目前的實際樣子重新對位字幕
           (被你刪掉的內容自動消失、快轉段自動壓縮),並匯入新的 SRT。</div>
+        <button id="clearCache" class="btn">清除快取(重新辨識)</button>
+        <div class="hint">平常用不到。改設定程式都會自己重跑該步驟;
+          只有在「辨識結果怪怪的、但設定又沒動過」時才需要這顆。</div>
         <div id="afterMsg" class="savemsg"></div>
       </div>
     </div>

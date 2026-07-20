@@ -1,3 +1,5 @@
+/* --ui-scale:字級縮放。面板右上角的「字級」按鈕會改它,整個介面跟著放大 */
+:root { --ui-scale: 1; }
 /* 配合 Premiere 深色介面 */
 * { box-sizing: border-box; }
 body {
@@ -6,10 +8,10 @@ body {
   color: #d8d8d8;
   margin: 0;
   padding: 12px;
-  font-size: 13px;
+  font-size: calc(13px * var(--ui-scale));
 }
 h1 {
-  font-size: 15px;
+  font-size: 1.15em;
   font-weight: 600;
   margin: 0 0 12px;
   color: #fff;
@@ -23,7 +25,7 @@ h1 {
   border-radius: 5px;
   background: #333;
   color: #e8e8e8;
-  font-size: 13px;
+  font-size: 1em;
   cursor: pointer;
 }
 .btn:hover:not(:disabled) { background: #3d3d3d; }
@@ -36,7 +38,7 @@ h1 {
 }
 .btn.primary:hover:not(:disabled) { background: #3a78e8; }
 .path {
-  font-size: 11px;
+  font-size: 0.85em;
   color: #9a9a9a;
   word-break: break-all;
   margin: 2px 0 10px;
@@ -48,7 +50,7 @@ h1 {
   background: #2b2b2b;
   border-radius: 5px;
   border-left: 3px solid #2d6cdf;
-  font-size: 12px;
+  font-size: 0.92em;
 }
 /* 狀態列依情況變色:黃=處理中、綠=成功、紅=出錯,一眼看懂 */
 .status.busy { border-left-color: #d9a441; }
@@ -57,7 +59,7 @@ h1 {
 .log {
   background: #1a1a1a;
   color: #b5b5b5;
-  font-size: 11px;
+  font-size: 0.85em;
   line-height: 1.55;
   padding: 8px;
   border-radius: 5px;
@@ -71,7 +73,7 @@ h1 {
 .lg-err { color: #e08c8c; }
 .lg-ok  { color: #7fc98f; }
 .hint {
-  font-size: 11px;
+  font-size: 0.85em;
   color: #888;
   margin-top: 10px;
   line-height: 1.6;
@@ -85,30 +87,30 @@ h1 {
   border-radius: 5px;
 }
 .section-head:hover { background: #333; }
-.chev { color: #888; font-size: 11px; }
+.chev { color: #888; font-size: 0.85em; }
 .section-body { padding: 8px 10px; }
-.btn.small { padding: 6px 10px; font-size: 12px; margin: 8px 0 0; width: auto; }
-.savemsg { font-size: 11px; color: #2e8b57; margin-left: 8px; }
+.btn.small { padding: 6px 10px; font-size: 0.92em; margin: 8px 0 0; width: auto; }
+.savemsg { font-size: 0.85em; color: #2e8b57; margin-left: 8px; }
 
 /* 設定分組(可折疊的小節) */
 .group { margin: 4px 0 10px; }
 .groupHead {
   display: flex; align-items: center; gap: 6px; cursor: pointer;
   user-select: none; padding: 5px 2px; margin-top: 6px;
-  font-size: 12px; font-weight: 600; color: #cfcfcf;
+  font-size: 0.92em; font-weight: 600; color: #cfcfcf;
   border-bottom: 1px solid #3a3a3a;
 }
 .groupHead:hover { color: #fff; }
-.groupToggle { color: #888; font-size: 11px; width: 12px; }
+.groupToggle { color: #888; font-size: 0.85em; width: 12px; }
 .groupBody { padding: 2px 0 0 4px; }
 
 /* 表單控制項 */
 .field { margin: 8px 0; }
-.field > label { display: block; font-size: 12px; color: #cfcfcf; margin-bottom: 3px; }
-.field .fhint { font-size: 10px; color: #777; margin-top: 2px; }
+.field > label { display: block; font-size: 0.92em; color: #cfcfcf; margin-bottom: 3px; }
+.field .fhint { font-size: 0.82em; color: #777; margin-top: 2px; }
 .field input[type="text"], .field input[type="number"], .field select, .field textarea {
   width: 100%; box-sizing: border-box; background: #1c1c1c; color: #e8e8e8;
-  border: 1px solid #444; border-radius: 4px; padding: 5px 7px; font-size: 12px;
+  border: 1px solid #444; border-radius: 4px; padding: 5px 7px; font-size: 0.92em;
   font-family: inherit;
 }
 .field textarea { resize: vertical; min-height: 44px; }
@@ -117,7 +119,7 @@ h1 {
 .field.bool input { width: auto; }
 .cats { display: flex; flex-wrap: wrap; gap: 6px; }
 .cat {
-  font-size: 12px; padding: 4px 10px; border-radius: 12px; cursor: pointer;
+  font-size: 0.92em; padding: 4px 10px; border-radius: 12px; cursor: pointer;
   border: 1px solid #4a4a4a; background: #2a2a2a; color: #bbb; user-select: none;
 }
 .cat.on { background: #2d6cdf; border-color: #2d6cdf; color: #fff; }
@@ -136,6 +138,19 @@ h1 {
 .numrow { display: flex; align-items: center; gap: 8px; }
 .numrow input[type="range"] { flex: 1; min-width: 60px; accent-color: #2d6cdf; }
 .numrow input[type="number"] { width: 66px; flex: none; text-align: right; }
+
+/* 頂端偏好列:字級 + 提示音 */
+.prefbar {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin: 0 0 10px; font-size: 0.85em; color: #8a8a8a;
+}
+.prefbar .sizebtn {
+  border: 1px solid #4a4a4a; background: #2a2a2a; color: #bbb;
+  border-radius: 4px; cursor: pointer; padding: 2px 9px; font-family: inherit;
+}
+.prefbar .sizebtn.on { background: #2d6cdf; border-color: #2d6cdf; color: #fff; }
+.prefbar label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.prefbar .spacer { flex: 1; }
 
 /* VST 外掛列 */
 .vstrow { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }

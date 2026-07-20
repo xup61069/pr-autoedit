@@ -189,7 +189,29 @@ def _transcribe_faster_whisper(audio_path: str) -> list[Word]:
                     start=w.start,
                     end=w.end,
                 ))
+
+    # 轉錄完就把模型放掉,不要一路佔著顯示卡記憶體到程式結束。
+    # 後面還有混音、產 XML 等步驟(4K 影片可能要跑上一分鐘),
+    # 這段期間白白佔著好幾 GB 的 VRAM,會排擠 Premiere 自己的用量。
+    _release_gpu(model)
     return words
+
+
+def _release_gpu(model=None) -> None:
+    """放掉模型並歸還顯示卡記憶體。各種釋放手段都可能不存在,所以全部包起來。"""
+    import gc
+    if model is not None:
+        try:
+            del model
+        except Exception:
+            pass
+    gc.collect()
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
 
 
 _funasr_model = None   # 模型快取,避免同一次執行重複載入

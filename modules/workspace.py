@@ -82,6 +82,43 @@ def prepare(work_dir: str) -> None:
               + (f"、清掉 {removed} 個已淘汰的舊檔" if removed else ""))
 
 
+def clear_cache(work_dir: str, what: str = "asr") -> str:
+    """清快取。回傳一句給人看的結果說明。
+
+    what="asr"  只清語音辨識快取。下次跑會重新辨識(幾分鐘),
+                 剪輯設定不受影響。
+    what="all"  整個 _work/ 清掉。連抽出來的音軌、混音記錄都重來,
+                 等於這支影片從頭跑一次。
+
+    什麼時候需要?平常「不需要」——換引擎、換模型、改詞庫、改聲音設定,
+    程式都會自己偵測到並重跑該步驟。只有在「你確定辨識結果怪怪的、
+    但設定又沒動過」這種說不出道理的情況下,才用得上這顆。
+    """
+    inner = os.path.join(work_dir, INTERNAL_DIR)
+    if not os.path.isdir(inner):
+        return "沒有東西可以清(這支影片還沒跑過)。"
+
+    if what == "all":
+        n = len([f for f in os.listdir(inner) if os.path.isfile(
+            os.path.join(inner, f))])
+        try:
+            shutil.rmtree(inner)
+        except OSError as e:
+            return f"清不掉(檔案可能正被使用中):{e}"
+        os.makedirs(inner, exist_ok=True)
+        return (f"已清掉 {n} 個中繼檔。下次剪這支影片會從頭跑一次"
+                "(含語音辨識,要幾分鐘)。")
+
+    p = os.path.join(inner, "02_transcript.json")
+    if not os.path.exists(p):
+        return "沒有辨識快取可以清(這支影片還沒辨識過)。"
+    try:
+        os.remove(p)
+    except OSError as e:
+        return f"清不掉(檔案可能正被使用中):{e}"
+    return "已清掉語音辨識快取。下次剪這支影片會重新辨識(要幾分鐘)。"
+
+
 def tidy(work_dir: str) -> None:
     """跑完之後清掉純中繼的音檔,省硬碟。
 
@@ -96,3 +133,19 @@ def tidy(work_dir: str) -> None:
                 os.remove(p)
             except OSError:
                 pass
+
+
+if __name__ == "__main__":
+    # 給面板的「清快取」按鈕呼叫:
+    #   python -m modules.workspace clear <output資料夾> [asr|all]
+    import sys
+    for _s in (sys.stdout, sys.stderr):
+        try:
+            _s.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+    if len(sys.argv) < 3 or sys.argv[1] != "clear":
+        print("用法:python -m modules.workspace clear <output資料夾> [asr|all]",
+              file=sys.stderr)
+        sys.exit(1)
+    print(clear_cache(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else "asr"))

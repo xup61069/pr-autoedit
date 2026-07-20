@@ -57,6 +57,18 @@
 
   var $ = function (id) { return document.getElementById(id); };
 
+  // 正在跑的 Python 子行程。面板被關掉/重新載入時要把它殺掉 ——
+  // 不然它會變成沒人管的孤兒行程,繼續佔著顯示卡記憶體不放。
+  var running = null;
+  function track(proc) {
+    running = proc;
+    proc.on("close", function () { if (running === proc) running = null; });
+    return proc;
+  }
+  window.addEventListener("beforeunload", function () {
+    if (running) { try { running.kill(); } catch (e) {} }
+  });
+
   // 狀態列:文字 + 顏色(busy=黃、ok=綠、err=紅,不給 kind 就是預設藍)
   function setStatus(t, kind) {
     $("status").textContent = t;
@@ -83,6 +95,33 @@
     log.scrollTop = log.scrollHeight;
   }
   function toFwd(p) { return String(p).replace(/\\/g, "/"); }
+
+  // ---------- 完成提示音 ----------
+  // 剪一支長片要好幾分鐘,你不會盯著看。用聲音叫你回來。
+  // 音是即時合成的,不放音檔進專案(省得帶一個二進位檔)。
+  // 成功=兩個上行音、失敗=一個低音。
+  function beep(ok) {
+    if (!soundOn()) return;
+    try {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      var ctx = new Ctx();
+      var notes = ok ? [[880, 0], [1318.5, 0.13]] : [[311, 0]];
+      notes.forEach(function (n) {
+        var osc = ctx.createOscillator(), gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = n[0];
+        var t0 = ctx.currentTime + n[1];
+        // 淡入淡出,不然會有「喀」的爆音
+        gain.gain.setValueAtTime(0.0001, t0);
+        gain.gain.exponentialRampToValueAtTime(0.25, t0 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.26);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(t0); osc.stop(t0 + 0.3);
+      });
+      setTimeout(function () { try { ctx.close(); } catch (e) {} }, 1200);
+    } catch (e) {}
+  }
 
   // ---------- 錯誤翻譯表 ----------
   // Python 出錯時吐的是整片英文,對非程式背景的人等於沒訊息。
@@ -157,6 +196,44 @@
       " 裡的 python / project_dir 兩個欄位,存檔後重新載入面板。\n" +
       "  (原始訊息:" + e.message + ")";
   }
+
+  // ---------- 介面偏好(字級、提示音)----------
+  // 這兩個是「面板長相」的偏好,不是剪輯設定,所以存在瀏覽器本機就好,
+  // 不寫進 settings_local.json,免得跟剪輯參數混在一起。
+  function pref(k, v) {
+    try {
+      if (v === undefined) return window.localStorage.getItem("pr_" + k);
+      window.localStorage.setItem("pr_" + k, v);
+    } catch (e) {}
+    return null;
+  }
+  function soundOn() { return $("soundOn") ? $("soundOn").checked : true; }
+
+  function applyScale(scale) {
+    document.documentElement.style.setProperty("--ui-scale", scale);
+    var btns = document.querySelectorAll(".sizebtn");
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle("on", btns[i].getAttribute("data-scale") === String(scale));
+    }
+    pref("ui_scale", scale);
+  }
+  (function initPrefs() {
+    var btns = document.querySelectorAll(".sizebtn");
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].addEventListener("click", function () {
+        applyScale(this.getAttribute("data-scale"));
+      });
+    }
+    applyScale(pref("ui_scale") || "1.25");     // 預設「中」,原本的字實在偏小
+    var s = pref("sound_on");
+    if (s !== null && $("soundOn")) $("soundOn").checked = (s === "1");
+    if ($("soundOn")) {
+      $("soundOn").addEventListener("change", function () {
+        pref("sound_on", this.checked ? "1" : "0");
+        if (this.checked) beep(true);           // 打勾時先讓你聽聽看
+      });
+    }
+  })();
 
   // ---------- 頁面切換 ----------
   $("toAdv").addEventListener("click", function () {
@@ -589,7 +666,8 @@
     var name = path.basename(selectedVideo, path.extname(selectedVideo));
     // -u = 不緩衝輸出:Python 的進度訊息才會「即時」出現在下面,
     // 不然會累積到一大段才一次噴出來,看起來像當掉
-    var proc = cp.spawn(PYTHON, ["-u", "pipeline.py", selectedVideo], { cwd: PROJECT_DIR });
+    var proc = track(cp.spawn(PYTHON, ["-u", "pipeline.py", selectedVideo],
+      { cwd: PROJECT_DIR }));
     proc.stdout.on("data", function (d) { appendLog(d.toString()); });
     proc.stderr.on("data", function (d) { appendLog(d.toString()); });
     proc.on("error", function (e) {
@@ -602,6 +680,7 @@
       if (code !== 0) {
         setStatus("處理失敗,下方有白話說明", "err");
         explainInto();
+        beep(false);
         $("run").disabled = false;
         return;
       }
@@ -616,6 +695,7 @@
           var base = "完成 ✓ 已匯入序列" +
             (n ? "(已換掉上次的舊序列)" : "") + subsMsg(r);
           setStatus(base, "ok");
+          beep(true);
           cleanOldSubtitleCopies(outDir, 3);
           rememberVideo(selectedVideo);
           runAutoSteps(selectedVideo, function (extra) {
@@ -698,10 +778,26 @@
     m.style.color = ok ? "#2e8b57" : "#e06c6c";
   }
   function setAfterButtons(enabled) {
-    ["openReport", "rebuild", "applyVst", "subsFromSeq"].forEach(function (id) {
-      $(id).disabled = !enabled;
+    ["openReport", "rebuild", "applyVst", "subsFromSeq",
+     "clearCache"].forEach(function (id) {
+      if ($(id)) $(id).disabled = !enabled;
     });
   }
+
+  // ---------- 清除快取 ----------
+  $("clearCache").addEventListener("click", function () {
+    if (!lastVideo) return;
+    setAfterButtons(false);
+    afterSay("清除中…", true);
+    cp.execFile(PYTHON,
+      ["-m", "modules.workspace", "clear", outDirOf(lastVideo), "asr"],
+      { cwd: PROJECT_DIR },
+      function (err, stdout, stderr) {
+        var msg = String(stdout || stderr || "").trim();
+        afterSay(msg || (err ? "清除失敗" : "已清除"), !err);
+        setAfterButtons(true);
+      });
+  });
 
   // ---------- 取得目前設定值 ----------
   // 表單展開過就用表單上的「當下」值(可能還沒存檔),沒展開過才問 Python。
@@ -758,9 +854,9 @@
     saveSettings(function () {
       // --stamp:序列名加時間。重算刻意保留舊序列讓你比較,
       // 全部同名就分不出哪條是剛剛那次了。
-      var proc = cp.spawn(PYTHON,
+      var proc = track(cp.spawn(PYTHON,
         ["-u", "pipeline.py", lastVideo, "--skip-audio", "--stamp"],
-        { cwd: PROJECT_DIR });
+        { cwd: PROJECT_DIR }));
       proc.stdout.on("data", function (d) { appendLog(d.toString()); });
       proc.stderr.on("data", function (d) { appendLog(d.toString()); });
       proc.on("error", function (e) {
@@ -772,6 +868,7 @@
         if (code !== 0) {
           afterSay("重算失敗,下方有白話說明", false);
           explainInto();
+          beep(false);
           setAfterButtons(true); return;
         }
         var outDir = outDirOf(lastVideo);
@@ -785,6 +882,7 @@
               var base = "已匯入新序列 ✓(名稱帶這次的時間;舊序列還在,"
                 + "可以兩條互相比較,不喜歡新的就刪掉它)" + subsMsg(r);
               afterSay(base, true);
+              beep(true);
               cleanOldSubtitleCopies(outDir, 3);
               runAutoSteps(lastVideo, function (extra, ok) {
                 afterSay(base + extra, ok !== false);
@@ -805,27 +903,38 @@
     return base.replace(/\.vst3$/i, "");
   }
 
-  var MIXER_HINT = "請改用穩定做法:視窗 > 音軌混音器,A1 軌最上面的效果插槽選 " +
-    "VoiceFX,一次搞定、整軌生效、隨時可調。";
+  var MIXER_HINT = "改用這個做法(更穩也更省資源):視窗 > 音軌混音器,"
+    + "A1 軌最上面的效果插槽選 VoiceFX。整軌一次搞定,隨時可調。";
 
-  // 把降噪掛到目前序列。done(成功與否, 給人看的訊息)
+  // 把降噪掛到目前序列的每個片段。done(成功與否, 給人看的訊息)
+  //
+  // ⚠️ 這是「每個片段各掛一個」。VoiceFX 是 NVIDIA 的 AI 降噪,每個實例都佔
+  // 顯示卡記憶體,片段一多就會把 VRAM 吃爆、Premiere 卡到不能用。
+  // 所以會先問 Premiere 有幾個片段,超過上限就拒絕。
   function applyDenoise(values, done) {
     var name = effectNameFrom(values);
     if (!name) {
       done(false, "設定裡沒有 VST 外掛路徑。" + MIXER_HINT);
       return;
     }
+    var max = values && values.DENOISE_PER_CLIP_MAX;
+    if (typeof max !== "number") max = 20;
     // 音樂段不掛降噪(降噪是衝著人聲設計的,會把音樂當噪音削掉)
-    cs.evalScript('prApplyAudioEffect("' + name + '","音樂")', function (r) {
-      if (r && r.indexOf("OK") === 0) {
-        done(true, "降噪已掛到 " + r.split(" ")[1] + " 個聲音片段 ✓ "
-          + "到「效果控制」隨時調整,不滿意可 Ctrl+Z 復原");
-      } else if (r === "NOFX") {
-        done(false, "Premiere 效果清單裡找不到「" + name + "」。" + MIXER_HINT);
-      } else {
-        done(false, "掛效果失敗:" + r + " " + MIXER_HINT);
-      }
-    });
+    cs.evalScript('prApplyAudioEffect("' + name + '","音樂",' + max + ')',
+      function (r) {
+        if (r && r.indexOf("OK") === 0) {
+          done(true, "降噪已掛到 " + r.split(" ")[1] + " 個聲音片段 ✓ "
+            + "到「效果控制」隨時調整,不滿意可 Ctrl+Z 復原");
+        } else if (r && r.indexOf("TOOMANY") === 0) {
+          done(false, "這條序列有 " + r.split(" ")[1] + " 個片段,"
+            + "一個一個掛會產生同樣數量的 AI 降噪實例,"
+            + "把顯示卡記憶體吃爆、Premiere 會卡死,所以沒有動手。" + MIXER_HINT);
+        } else if (r === "NOFX") {
+          done(false, "Premiere 效果清單裡找不到「" + name + "」。" + MIXER_HINT);
+        } else {
+          done(false, "掛效果失敗:" + r + " " + MIXER_HINT);
+        }
+      });
   }
 
   $("applyVst").addEventListener("click", function () {
@@ -848,12 +957,17 @@
       if (!v) return;
       if (v.AUTO_OPEN_REPORT !== false) openReportFor(video, true);
 
-      var needDenoise = v.AUTO_APPLY_DENOISE !== false
-        && v.AUDIO_MODE === "vst"
-        && v.VST_BAKE === false
+      // 這條序列需不需要你自己把降噪掛上去?
+      // 降噪沒烘進音檔時,新序列聽到的是原始錄音,不掛就等於沒降噪。
+      var wantsDenoise = v.AUDIO_MODE === "vst" && v.VST_BAKE === false
         && v.VST_CHAIN && v.VST_CHAIN.length;
-      if (!needDenoise) return;
+      if (!wantsDenoise) return;
 
+      if (v.AUTO_APPLY_DENOISE !== true) {
+        // 預設走這條:不自動掛(每片段一個實例會吃爆顯卡記憶體),只提醒一次
+        say(";還沒降噪 —— " + MIXER_HINT, true);
+        return;
+      }
       applyDenoise(v, function (ok, msg) {
         // 失敗不是災難(剪輯結果好好的),所以只補一句說明,不改成紅色錯誤
         say(ok ? ";" + msg : ";自動掛降噪沒成功 —— " + msg, ok);

@@ -267,7 +267,7 @@ function prDumpSequenceLayout(outPath) {
  * 用音軌混音器手動掛,一次搞定)。
  * skipJoined:用 | 分隔的片段名稱開頭,例如「音樂」= 音樂段不掛降噪。
  */
-function prApplyAudioEffect(effectName, skipJoined) {
+function prApplyAudioEffect(effectName, skipJoined, maxClips) {
     try {
         if (typeof app === "undefined" || !app.project) {
             return "ERROR: 沒有開啟中的 Premiere 專案";
@@ -282,6 +282,25 @@ function prApplyAudioEffect(effectName, skipJoined) {
 
         var qseq = qe.project.getActiveSequence();
         var skips = skipJoined ? String(skipJoined).split("|") : [];
+
+        // 先數一遍要掛幾個。每個 VoiceFX 實例都佔顯示卡記憶體,
+        // 剪很兇的片動輒上千個片段,真的掛下去會把 VRAM 吃爆、Premiere 卡死。
+        // 數量太多就直接拒絕,讓面板改教「整軌掛一個」的做法。
+        var limit = parseInt(maxClips, 10);
+        if (!isNaN(limit) && limit > 0) {
+            var n = 0, t2, tr2;
+            for (t2 = 0; t2 < qseq.numAudioTracks; t2++) {
+                tr2 = qseq.getAudioTrackAt(t2);
+                for (var k = 0; k < tr2.numItems; k++) {
+                    try {
+                        var it2 = tr2.getItemAt(k);
+                        if (it2 && it2.type !== "Empty") n++;
+                    } catch (eC) { }
+                }
+            }
+            if (n > limit) return "TOOMANY " + n;
+        }
+
         var applied = 0, failed = 0;
         for (var t = 0; t < qseq.numAudioTracks; t++) {
             var track = qseq.getAudioTrackAt(t);
