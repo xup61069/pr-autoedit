@@ -73,6 +73,25 @@ def get_total_frames(video_path: str, fps: float) -> int:
     return int(float(out) * fps)
 
 
+def audio_fingerprint() -> str:
+    """把「會影響音檔內容」的設定壓成一個指紋。
+
+    「重算剪輯」為了快,預設跳過音訊清理直接沿用上次清好的音檔。
+    但如果你改的正好是聲音類設定(降噪要不要烘進去、響度、外掛…),
+    沿用舊音檔就等於你的修改根本沒生效,而且畫面上完全看不出來。
+    指紋一變就強制重跑那一步。"""
+    parts = [str(cfg.AUDIO_MODE), str(cfg.TARGET_LUFS), str(cfg.TARGET_TRUE_PEAK)]
+    if cfg.AUDIO_MODE == "vst":
+        bake = bool(getattr(cfg, "VST_BAKE", True))
+        parts.append(str(bake))
+        # 降噪不烘進音檔時,外掛與它的參數對音檔沒有任何影響,不必列入
+        if bake:
+            parts += [str(cfg.VST_CHAIN),
+                      str(getattr(cfg, "VOICEFX_MODE", "")),
+                      str(getattr(cfg, "VOICEFX_INTENSITY", ""))]
+    return hashlib.md5("|".join(parts).encode("utf-8")).hexdigest()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("video", help="輸入影片路徑")
@@ -106,13 +125,29 @@ def main():
     clean_mp4 = os.path.join(work, "01_clean_av.mp4")
     norm_wav = os.path.join(work, "01_clean_norm.wav")
     raw_wav = os.path.join(work, "01_raw.wav")
-    if args.skip_audio and (os.path.exists(norm_wav) or os.path.exists(raw_wav)):
+    audio_info = os.path.join(work, "01_audio_info.json")
+    audio_fp = audio_fingerprint()
+    skip = args.skip_audio and (os.path.exists(norm_wav) or os.path.exists(raw_wav))
+    if skip:
+        old_fp = None
+        try:
+            with open(audio_info, "r", encoding="utf-8") as f:
+                old_fp = json.load(f).get("fingerprint")
+        except (ValueError, OSError):
+            pass
+        if old_fp != audio_fp:
+            skip = False
+            print("[1/5] 聲音設定已變更,重新處理音訊(這一步比較久,請稍候)")
+
+    if skip:
         print("[1/5] 跳過音訊清理(用現有乾淨音訊)")
         clean_wav = norm_wav if os.path.exists(norm_wav) else raw_wav
     else:
         print("[1/5] 音訊清理")
         from modules.audio_clean import clean_audio
         clean_wav = clean_audio(args.video, work)
+        with open(audio_info, "w", encoding="utf-8") as f:
+            json.dump({"fingerprint": audio_fp}, f)
 
     # --- 2. 轉錄 ---
     print("[2/5] 語音轉錄")

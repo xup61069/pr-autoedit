@@ -66,7 +66,9 @@
   // log:一行一行加進去,錯誤行標紅、完成行標綠,掃一眼就找得到重點
   var LOG_ERR_RE = /(Traceback|Error|錯誤|失敗|找不到|⚠)/;
   var LOG_OK_RE = /(✓|完成)/;
+  var logBuf = "";           // 這次執行的完整訊息,失敗時拿來對照錯誤翻譯表
   function appendLog(t) {
+    logBuf += String(t);
     var log = $("log");
     var lines = String(t).split(/\r?\n/);
     for (var i = 0; i < lines.length; i++) {
@@ -81,6 +83,67 @@
     log.scrollTop = log.scrollHeight;
   }
   function toFwd(p) { return String(p).replace(/\\/g, "/"); }
+
+  // ---------- 錯誤翻譯表 ----------
+  // Python 出錯時吐的是整片英文,對非程式背景的人等於沒訊息。
+  // 這裡把實際遇過的錯誤翻成「發生什麼事 + 下一步做什麼」。
+  // 順序有意義:越具體的規則放越前面,第一個命中的就是答案。
+  var ERROR_TABLE = [
+    { re: /(CUDA|GPU) out of memory|torch\.cuda\.OutOfMemoryError/i,
+      msg: "顯示卡記憶體不夠用了。\n" +
+           "  → 到「⚙ 設定 > 辨識 > 辨識模型」把 large-v3 改成 medium,再跑一次。\n" +
+           "     (medium 稍微不準一點,但省一半以上的顯卡記憶體)" },
+    { re: /No module named ['"]?([\w.]+)/i,
+      msg: "少裝了一個套件:$1。\n" +
+           "  → 在命令列執行:pip install $1\n" +
+           "     (若你用的是 miniconda,請先切到跟面板同一個環境)" },
+    { re: /auto-editor/i,
+      msg: "剪輯引擎 auto-editor 沒跑成功。\n" +
+           "  → 在命令列執行:pip install auto-editor" },
+    { re: /\[WinError 2\]|ffmpeg.*(not found|不是內部或外部命令)|'ffmpeg' is not recognized/i,
+      msg: "找不到 ffmpeg(處理影音的必要工具)。\n" +
+           "  → 用系統管理員身分執行:winget install Gyan.FFmpeg\n" +
+           "     裝完要重新開啟 Premiere,面板才吃得到新的 PATH。" },
+    { re: /\[WinError 5\]|Permission denied|Errno 13|4294967283/i,
+      msg: "檔案被鎖住,寫不進去 —— 幾乎都是 Premiere 正在使用那個影片檔。\n" +
+           "  → 在 Premiere 專案面板把這支影片相關的序列關掉(或關掉專案),再按一次。\n" +
+           "     程式已經會自動改用新檔名避開,若仍失敗才需要這樣做。" },
+    { re: /cudnn|CUDA driver|no kernel image|CUDA error/i,
+      msg: "顯示卡的 CUDA 環境有問題(驅動或 PyTorch 版本不合)。\n" +
+           "  → 先確認能不能跑:改用 CPU 辨識(較慢但一定會動)——\n" +
+           "     編輯 config/settings_local.json,加一行 \"WHISPER_DEVICE\": \"cpu\"" },
+    { re: /scan failure|Unable to load plugin|VST/i,
+      msg: "降噪外掛載入失敗。\n" +
+           "  → 檢查「進階設定 > VST 外掛路徑」是不是指到「內層」那個 .vst3 檔。\n" +
+           "     VoiceFX 正確路徑長這樣(注意最後還有一層 .vst3):\n" +
+           "     ...\\VoiceFX.vst3\\Contents\\x86_64-win\\VoiceFX.vst3" },
+    { re: /No space left|磁碟空間|WinError 112/i,
+      msg: "硬碟空間不夠了。\n" +
+           "  → 這個工具會在 output 資料夾產生暫存音檔(4K 長片可能好幾 GB)。\n" +
+           "     清掉 output 底下用不到的舊影片資料夾即可。" },
+    { re: /沒有音軌/,
+      msg: "這支影片沒有聲音,本工具沒有東西可以處理。\n" +
+           "  → 確認你選的是「有收音」的錄影檔。" }
+  ];
+
+  // 從這次的訊息裡找出看得懂的解釋;找不到就回 null(照舊顯示原始訊息)
+  function explainError(text) {
+    for (var i = 0; i < ERROR_TABLE.length; i++) {
+      var m = ERROR_TABLE[i].re.exec(text);
+      if (m) {
+        return ERROR_TABLE[i].msg.replace(/\$1/g, m[1] || "");
+      }
+    }
+    return null;
+  }
+
+  // 失敗時在 log 尾巴補上白話說明
+  function explainInto(prefix) {
+    var hint = explainError(logBuf);
+    appendLog("\n" + (prefix || "── 這是什麼意思 ──") + "\n" +
+      (hint || "沒有對應的常見原因。把上面的訊息整段複製下來回報," +
+               "特別是含 Error / Traceback 的那幾行。") + "\n");
+  }
 
   // 啟動 Python 失敗時的說明。
   // 舊訊息叫人「去改 main.js 的 PYTHON」,但改版後正確的位置是
@@ -457,6 +520,7 @@
     $("run").disabled = true;
     $("pick").disabled = true;
     $("log").textContent = "";
+    logBuf = "";
     setStatus("處理中,請稍候…(第一次會下載模型,較久)", "busy");
     appendLog("▶ 已啟動,正在載入程式與模型…(下面沒動靜是正常的,請稍候)\n");
 
@@ -473,7 +537,12 @@
     });
     proc.on("close", function (code) {
       $("pick").disabled = false;
-      if (code !== 0) { setStatus("處理失敗(代碼 " + code + "),請看下方訊息", "err"); $("run").disabled = false; return; }
+      if (code !== 0) {
+        setStatus("處理失敗,下方有白話說明", "err");
+        explainInto();
+        $("run").disabled = false;
+        return;
+      }
       setStatus("剪輯完成,正在匯入 Premiere…", "busy");
       var outDir = path.join(PROJECT_DIR, "output", name);
       var xml = toFwd(path.join(outDir, "04_project.xml"));
@@ -586,8 +655,13 @@
   $("rebuild").addEventListener("click", function () {
     if (!lastVideo) return;
     setAfterButtons(false);
-    afterSay("用目前設定重算中…(不重跑辨識,通常幾秒)", true);
-    appendLog("▶ 重算已啟動(用新設定重新決策,不重跑辨識)…\n");
+    // 文案不能寫死「不重跑辨識」:改了辨識或聲音設定時,程式會自動重跑
+    // 那一段(要幾分鐘)。講死了你會以為當掉。
+    afterSay("用目前設定重算中…(一般幾秒;若你改了辨識或聲音設定,"
+      + "會自動重跑那一段,需要幾分鐘)", true);
+    logBuf = "";
+    appendLog("▶ 重算已啟動:用新設定重新決策。\n"
+      + "  (剪輯類設定=幾秒;辨識或聲音類設定有改動=自動重跑該步驟,較久)\n");
     saveSettings(function () {
       var proc = cp.spawn(PYTHON, ["-u", "pipeline.py", lastVideo, "--skip-audio"],
         { cwd: PROJECT_DIR });
@@ -600,7 +674,8 @@
       });
       proc.on("close", function (code) {
         if (code !== 0) {
-          afterSay("重算失敗(代碼 " + code + "),見下方訊息", false);
+          afterSay("重算失敗,下方有白話說明", false);
+          explainInto();
           setAfterButtons(true); return;
         }
         var outDir = outDirOf(lastVideo);
@@ -684,7 +759,11 @@
         { cwd: PROJECT_DIR, maxBuffer: 4 * 1024 * 1024 },
         function (err, stdout, stderr) {
           appendLog(String(stdout || "") + String(stderr || ""));
-          if (err) { afterSay("字幕對位失敗,見下方訊息", false); setAfterButtons(true); return; }
+          if (err) {
+            afterSay("字幕對位失敗,下方有白話說明", false);
+            explainInto();
+            setAfterButtons(true); return;
+          }
           var srt = toFwd(path.join(outDir, "05_subtitles_final.srt"));
           // 走跟主流程同一條路:複製成新檔名再匯入,否則 Premiere 會沿用
           // 專案裡的舊字幕、看起來像「沒有重新生」
