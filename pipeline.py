@@ -16,7 +16,7 @@
 """
 
 from __future__ import annotations
-import argparse, hashlib, json, os, sys, subprocess
+import argparse, datetime, hashlib, json, os, sys, subprocess
 
 # Windows 中文命令列預設是 cp950 編碼,印中文或 ✓ 之類的符號會變亂碼甚至當掉。
 # 強制把訊息輸出改成 UTF-8,一次解決亂碼與當掉兩個問題。
@@ -101,6 +101,8 @@ def main():
                     help="跳過音訊清理(已有 01_clean_av.mp4)")
     ap.add_argument("--mode", choices=["live", "baked"], default=None,
                     help="覆寫交付方式(面板「重算剪輯」按鈕用,不動設定檔)")
+    ap.add_argument("--stamp", action="store_true",
+                    help="序列名稱加上時間(重算用:多條序列才分得出誰是誰)")
     args = ap.parse_args()
 
     if args.mode:
@@ -281,8 +283,12 @@ def main():
             pass          # 被 Premiere 鎖住;下面寫入時一樣會失敗並報錯
 
     # 序列名稱帶上影片名:在 Premiere 專案裡一眼看得出是哪支片,
-    # 面板重跑時也才能只覆蓋「這支片的」舊序列
+    # 面板重跑時也才能只覆蓋「這支片的」舊序列。
+    # --stamp(重算時)再加上時間:重算會保留舊序列讓你比較,全部同名的話
+    # 根本分不出哪條是剛剛那次、想反悔也挑不到。
     seq_name = f"{name} 活專案" if live else f"{name} 自動剪輯"
+    if args.stamp:
+        seq_name += " " + datetime.datetime.now().strftime("%H:%M")
     if live:
         # 活專案:全保留 + 標籤,自製 XML,不需要 auto-editor
         from modules.premiere_xml import export_live_xml

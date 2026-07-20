@@ -272,8 +272,8 @@ import copy as _copy
 DEFAULTS = {_k: _copy.deepcopy(_v) for _k, _v in list(globals().items())
             if _k.isupper()}
 
-# 這兩個是「關於設定的設定」,不接受個人覆寫,否則會把快照本身蓋掉
-_META_KEYS = ("DEFAULTS", "OVERRIDDEN")
+# 這個是「關於設定的設定」,不接受個人覆寫,否則會把快照本身蓋掉
+_META_KEYS = ("DEFAULTS",)
 
 
 # ============================================================
@@ -308,8 +308,12 @@ if _os.path.exists(_json_path):
     except (ValueError, OSError):
         pass
 
-# 哪些設定被你改過(跟內建預設不同)。審閱報告用它列出「本次設定摘要」,
-# 讓你事後回頭看得出「那條序列當時是用什麼數字剪的」。
-OVERRIDDEN = sorted(_k for _k, _v in globals().items()
-                    if _k.isupper() and _k not in _META_KEYS
-                    and _k in DEFAULTS and _v != DEFAULTS[_k])
+def changed_settings() -> list[str]:
+    """現在有哪些設定跟內建預設不一樣。
+
+    刻意做成「呼叫當下才算」而不是載入時算好一份:程式跑到一半還可能再改
+    設定(例如面板重算鈕用 --mode 覆寫交付方式),事先算死的清單會過期,
+    害審閱報告把「其實一樣的項目」也列成有改動。"""
+    g = globals()
+    return sorted(_k for _k, _v in DEFAULTS.items()
+                  if _k not in _META_KEYS and g.get(_k) != _v)

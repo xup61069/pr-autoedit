@@ -663,7 +663,10 @@
     appendLog("▶ 重算已啟動:用新設定重新決策。\n"
       + "  (剪輯類設定=幾秒;辨識或聲音類設定有改動=自動重跑該步驟,較久)\n");
     saveSettings(function () {
-      var proc = cp.spawn(PYTHON, ["-u", "pipeline.py", lastVideo, "--skip-audio"],
+      // --stamp:序列名加時間。重算刻意保留舊序列讓你比較,
+      // 全部同名就分不出哪條是剛剛那次了。
+      var proc = cp.spawn(PYTHON,
+        ["-u", "pipeline.py", lastVideo, "--skip-audio", "--stamp"],
         { cwd: PROJECT_DIR });
       proc.stdout.on("data", function (d) { appendLog(d.toString()); });
       proc.stderr.on("data", function (d) { appendLog(d.toString()); });
@@ -686,8 +689,8 @@
         cs.evalScript('prImportEditedProject("' + xml + '","' + srt + '","0")',
           function (r) {
             if (r && r.indexOf("OK") === 0) {
-              afterSay("已匯入新序列 ✓(舊序列還在,不喜歡新的就刪掉它)"
-                + subsMsg(r), true);
+              afterSay("已匯入新序列 ✓(名稱帶這次的時間;舊序列還在,"
+                + "可以兩條互相比較,不喜歡新的就刪掉它)" + subsMsg(r), true);
               cleanOldSubtitleCopies(outDir, 3);
             } else { afterSay("重算完成,但匯入出錯:" + r, false); }
             setAfterButtons(true);

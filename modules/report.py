@@ -11,6 +11,55 @@ import config.settings as cfg
 import html
 
 
+def _fmt_value(v) -> str:
+    """把設定值印成人看得懂的樣子(勾選項目印開/關、清單用頓號串起來)"""
+    if isinstance(v, bool):
+        return "開" if v else "關"
+    if isinstance(v, (list, tuple)):
+        if not v:
+            return "(空)"
+        # VST 路徑很長,只留檔名就夠認人了
+        parts = [str(x).replace("\\", "/").split("/")[-1] if "\\" in str(x)
+                 or "/" in str(x) else str(x) for x in v]
+        s = "、".join(parts)
+        return s if len(s) <= 60 else s[:60] + "…"
+    return str(v)
+
+
+def _settings_summary() -> str:
+    """本次設定摘要:只列「跟內建預設不一樣」的項目。
+
+    為什麼要有:你調了幾個旋鈕、產出一條序列,過兩天覺得不對想調回去,
+    以前沒有任何地方查得到「那條序列當時用的是什麼數字」。
+    現在每份報告都自己帶著,對照兩份報告就知道差在哪。"""
+    changed = cfg.changed_settings()
+    if not changed:
+        return ('<div class="summary">本次全部使用內建預設值,沒有任何自訂設定。</div>')
+
+    try:
+        from ui_settings import FIELDS
+        labels = {f["key"]: f["label"] for f in FIELDS}
+    except Exception:
+        labels = {}
+
+    rows = "".join(
+        f"<tr><td>{html.escape(labels.get(k, k))}</td>"
+        f"<td><b>{html.escape(_fmt_value(getattr(cfg, k, None)))}</b></td>"
+        f"<td>{html.escape(_fmt_value(cfg.DEFAULTS.get(k)))}</td></tr>"
+        for k in changed)
+    return f"""
+<h2 style="font-size:1.1rem;font-weight:500">本次設定摘要</h2>
+<div class="summary">
+  下面 {len(changed)} 項跟預設值不同,其餘都是預設。
+  這份清單就是這條序列的「配方」——之後覺得剪得不對想調回來,
+  拿兩份報告對照就知道差在哪。面板的數字欄位<b>點兩下可恢復預設</b>。
+</div>
+<table>
+  <tr><th>設定項目</th><th>這次用的值</th><th>預設值</th></tr>
+  {rows}
+</table>"""
+
+
 def generate(timeline: Timeline, words: list[Word],
             table: RemapTable, out_html: str, live: bool = False) -> str:
     """live=True(活專案模式):時間軸=原始影片,所有時間碼直接用原始位置,
@@ -126,6 +175,7 @@ def generate(timeline: Timeline, words: list[Word],
   {''.join(rows)}
 </table>
 {music_html}
+{_settings_summary()}
 </body></html>"""
 
     with open(out_html, "w", encoding="utf-8") as f:
