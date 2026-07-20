@@ -40,7 +40,7 @@ import config.settings as cfg
 # 進階頁裡「預設折疊」的分組(基本頁的分組一律展開)
 # 註:降噪外掛(VST)刻意不折疊,讓使用者一眼看到降噪設定
 COLLAPSED_GROUPS = [
-    "冗詞與口頭禪", "字幕", "審閱標記", "音樂/音效保護", "其他微調",
+    "冗詞與口頭禪", "字幕", "審閱標記", "音樂/音效保護", "畫面活動", "其他微調",
 ]
 
 FIELDS = [
@@ -90,6 +90,10 @@ FIELDS = [
     {"key": "MUSIC_DETECT", "label": "保護音樂/音效段", "type": "bool",
      "tier": "common", "group": "剪輯",
      "hint": "保護無語音但有聲音的段落(示範音樂、音效),避免被當停頓剪掉"},
+    {"key": "MOTION_DETECT", "label": "沒講話時看畫面決定", "type": "bool",
+     "tier": "common", "group": "剪輯",
+     "hint": "建議開啟。沒講話的段落再看一次畫面:畫面在動(你在示範操作)改為"
+             "加速帶過,畫面靜止才剪掉。避免默默示範的片段被整段剪掉"},
     {"key": "MICRO_TRIM", "label": "能量微剪(剪更兇)", "type": "bool",
      "tier": "common", "group": "剪輯",
      "hint": "剪更兇的主力,建議開啟。連句中無聲的小空檔也剪掉,"
@@ -187,6 +191,20 @@ FIELDS = [
     {"key": "MARKER_MAX_CONFIDENCE", "label": "要標記審閱的把握度門檻", "type": "number",
      "tier": "advanced", "group": "審閱標記", "min": 0, "max": 1, "step": 0.05,
      "hint": "只有把握度低於此值的切點才下 marker"},
+
+    # --- 分組:畫面活動 ---
+    {"key": "MOTION_SENSITIVITY", "label": "畫面活動靈敏度", "type": "number",
+     "tier": "advanced", "group": "畫面活動", "min": 0.1, "max": 5, "step": 0.1,
+     "soft": True, "show_if": {"MOTION_DETECT": [True]},
+     "hint": "越小越敏感。示範被剪掉了調小;滑鼠晃一下就不剪調大"},
+    {"key": "MOTION_MIN_SEC", "label": "多短的段落不看畫面", "type": "number",
+     "tier": "advanced", "group": "畫面活動", "min": 0.2, "max": 3, "step": 0.1,
+     "soft": True, "show_if": {"MOTION_DETECT": [True]},
+     "hint": "短於此秒數的停頓維持原本處理,避免產生大量細碎變速片段"},
+    {"key": "MOTION_SAMPLE_FPS", "label": "畫面取樣頻率", "type": "number",
+     "tier": "advanced", "group": "畫面活動", "min": 1, "max": 10, "step": 1,
+     "soft": True, "show_if": {"MOTION_DETECT": [True]},
+     "hint": "每秒比對幾張畫面。4 張已足夠,調高只會變慢"},
 
     # --- 分組:音樂/音效保護 ---
     {"key": "MUSIC_DB_ABOVE_FLOOR", "label": "音樂偵測靈敏度", "type": "number",

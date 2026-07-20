@@ -235,6 +235,48 @@ def trim_quiet_inside(segments: list[Segment],
                     reason="silence", confidence=0.95)
 
 
+def apply_motion(segments: list[Segment],
+                motion: list[tuple[int, int]],
+                fps: float) -> list[Segment]:
+    """依「畫面有沒有在動」決定沒講話的段落要加速還是剪掉。
+
+    決策引擎只聽聲音,所以你默默示範操作的那幾秒(拉推桿、開選單、比對前後)
+    會被當成停頓剪掉 —— 內容真的消失,而且不容易發現。加進畫面資訊之後:
+        畫面在動   -> 加速帶過(看得到,但不佔時間)
+        畫面靜止   -> 照舊剪掉
+
+    只動 reason="silence" 的段落:
+      - 音樂/音效段是刻意保護的 keep,不碰。
+      - 微剪挖出來的小停頓也是 reason="silence",但它們夾在句子中間、
+        通常不到一秒,轉成變速只會產生大量細碎的變速片段(效能地雷),
+        所以用 MOTION_MIN_SEC 擋掉:短於這個長度的段落一律維持原判。
+
+    判定用「重疊時間」而不是「重疊比例」:只要段落裡有夠久的畫面活動就算,
+    寧可誤判成加速也不要誤刪。誤判成加速的代價很小(20 倍速下一分半只佔
+    時間軸五秒),誤刪掉的示範內容卻是救不回來的。"""
+    if not motion:
+        return segments
+
+    min_sec = float(getattr(cfg, "MOTION_MIN_SEC", 0.5))
+    min_frames = min_sec * fps
+    factor = cfg.SILENCE_SPEED_FACTOR
+    out: list[Segment] = []
+    for s in segments:
+        if s.reason != "silence" or s.duration < min_frames:
+            out.append(s)
+            continue
+        overlap = sum(max(0, min(s.end, b) - max(s.start, a))
+                      for a, b in motion)
+        moving = overlap >= min_frames
+        if moving:
+            out.append(Segment(s.start, s.end, "speed", factor=factor,
+                               reason="silence_motion", confidence=s.confidence))
+        else:
+            out.append(Segment(s.start, s.end, "delete",
+                               reason="silence", confidence=s.confidence))
+    return out
+
+
 # ---------------------------------------------------------------------------
 # 重講偵測(說錯重來 -> 砍掉前一次)
 # ---------------------------------------------------------------------------

@@ -184,6 +184,15 @@ def main():
         from modules.audio_probe import detect_quiet_regions
         quiet = detect_quiet_regions(probe_wav, fps)
 
+    # 畫面活動:沒講話的段落,靠畫面決定要加速(有在示範)還是剪掉(純空檔)。
+    # 用「原始影片」而不是混音後的檔——混音後的檔這時還沒產生。
+    motion = []
+    if getattr(cfg, "MOTION_DETECT", False):
+        from modules.video_probe import detect_motion_regions
+        print("  分析畫面活動…(第一次要掃過整支影片,之後會沿用)")
+        motion = detect_motion_regions(
+            args.video, fps, cache_json=wpath(work, "02_motion.json"))
+
     # --- 3. 決策引擎 ---
     print("[3/5] 決策引擎")
     segments = build_segments(words, fps, total_frames, audible=audible)
@@ -210,6 +219,15 @@ def main():
         saved = (before_keep - after_keep) / fps
         print(f"  能量微剪:再剪掉 {saved / 60:.1f} 分"
               f"(講話段裡面沒聲音的小停頓)")
+
+    if motion:
+        from core.decision import apply_motion
+        segments = apply_motion(segments, motion, fps)
+        n_moving = sum(1 for s in segments if s.reason == "silence_motion")
+        moving_sec = sum(s.duration for s in segments
+                         if s.reason == "silence_motion") / fps
+        print(f"  畫面活動:{n_moving} 段沒講話但畫面在動,改為加速不剪掉"
+              f"(共 {moving_sec / 60:.1f} 分)")
 
     n_del = sum(1 for s in segments if s.action == "delete")
     n_spd = sum(1 for s in segments if s.action == "speed")

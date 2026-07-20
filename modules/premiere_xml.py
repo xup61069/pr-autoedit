@@ -34,13 +34,15 @@ import json, os, subprocess
 _LABELS = {
     "speech": None,          # 語音:不上標籤,維持預設色
     "silence": "Rose",       # 靜音:粉紅(候選:刪除或快轉)
+    "silence_motion": "Lavender",  # 沒講話但畫面在動:薰衣草(示範操作,加速帶過)
     "music": "Caribbean",    # 音樂/音效:青綠(受保護,別剪)
     "filler": "Violet",      # 冗詞:紫(候選:刪除)
     "retake": "Mango",       # 說錯重講的前一次:橘(候選:刪除,務必先確認)
 }
 
 _CLIP_NAMES = {
-    "silence": "靜音", "music": "音樂", "filler": "冗詞", "retake": "重講",
+    "silence": "靜音", "silence_motion": "示範",
+    "music": "音樂", "filler": "冗詞", "retake": "重講",
 }
 
 

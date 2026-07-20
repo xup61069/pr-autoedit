@@ -86,6 +86,38 @@ MUSIC_DB_ABOVE_FLOOR = 12.0
 MUSIC_MIN_SEC = 1.2
 
 # ============================================================
+# 畫面活動偵測(沒講話時,看畫面決定要加速還是剪掉)
+# ============================================================
+# 決策引擎只聽聲音,所以你默默示範操作的那幾秒——拉推桿、開選單、
+# 比對前後差異——會被當成停頓直接剪掉。內容真的消失,而且不容易發現。
+# 開啟後,沒講話的段落會再看一次畫面:
+#     畫面在動   -> 加速帶過(看得到,但不佔時間)
+#     畫面靜止   -> 照舊剪掉
+
+# 是否啟用
+MOTION_DETECT = True
+
+# 每秒取樣幾張畫面來比對。4 張已足夠抓到操作動作;調高只會變慢。
+MOTION_SAMPLE_FPS = 4.0
+
+# 靈敏度:相鄰兩張縮圖的平均亮度差超過多少算「畫面在動」(0~255)。
+# 數字越小越敏感(連滑鼠移動都算),越大只認大動作。
+#
+# 實測(17 分鐘 4K 教學片,382 個靜音段共 6.4 分):
+#     0.3 -> 47 段改為加速(1.6 分)
+#     0.5 -> 36 段改為加速(1.3 分)   <- 預設
+#     1.0 -> 16 段改為加速(0.8 分)
+#     2.0 ->  8 段改為加速(0.4 分)
+# 刻意偏敏感:誤判成加速的代價很小(1.3 分在 20 倍速下只佔時間軸 4 秒),
+# 誤刪掉的示範內容卻救不回來。
+MOTION_SENSITIVITY = 0.5
+
+# 短於這個秒數的段落不套用畫面判定,維持原本的處理方式。
+# 主要是擋掉能量微剪挖出來的零點幾秒小停頓 —— 那些轉成變速沒有意義,
+# 只會在 Premiere 產生大量細碎的變速片段(效能地雷)。
+MOTION_MIN_SEC = 0.5
+
+# ============================================================
 # 重講偵測(說錯重來 -> 自動砍掉前一次)
 # ============================================================
 # 講到一半發現講錯、停一下重講一次——前面那次是廢的,但它有完整語音,
@@ -335,6 +367,7 @@ PRESET_KEYS = [
     "MICRO_TRIM", "MICRO_TRIM_KEEP_SEC", "MICRO_TRIM_MIN_SEC",
     "MICRO_TRIM_DB_BELOW_SPEECH",
     "MUSIC_DETECT", "MUSIC_MIN_SEC", "MUSIC_DB_ABOVE_FLOOR",
+    "MOTION_DETECT", "MOTION_SENSITIVITY", "MOTION_MIN_SEC",
     "FILLER_PAUSE_SEC", "FILLER_ISOLATED_GAP_SEC", "RETAKE_DETECT",
 ]
 
@@ -350,6 +383,8 @@ SETTING_PRESETS = {
         "MICRO_TRIM_MIN_SEC": 0.2,
         "MICRO_TRIM_DB_BELOW_SPEECH": 26.0,
         "FILLER_ISOLATED_GAP_SEC": 0.2,
+        # 剪很兇也要保住示範畫面,但門檻抓嚴一點(滑鼠晃一下不算)
+        "MOTION_SENSITIVITY": 1.0,
     },
     "保守(保留呼吸感)": {
         "SILENCE_ACTION": "speed",
@@ -359,6 +394,7 @@ SETTING_PRESETS = {
         "MICRO_TRIM_KEEP_SEC": 0.12,
         "MICRO_TRIM_MIN_SEC": 0.4,
         "MICRO_TRIM_DB_BELOW_SPEECH": 18.0,
+        "MOTION_SENSITIVITY": 0.3,        # 敏感一點,寧可加速也不剪掉
     },
     "只縮停頓不剪內容": {
         "SILENCE_ACTION": "speed",

@@ -138,6 +138,73 @@ def test_quiet_ignores_short_pause():
     print("  ✓ 0.1 秒的短停頓不剪(低於 MICRO_TRIM_MIN_SEC)")
 
 
+# ---------------------------------------------------------------------------
+# 畫面活動:沒講話時,靠畫面決定加速還是剪掉
+# ---------------------------------------------------------------------------
+
+def _sil(a, b, reason="silence"):
+    from core.models import Segment
+    return Segment(a, b, "delete", reason=reason, confidence=0.95)
+
+
+def test_motion_turns_silence_into_speed():
+    """沒講話但畫面在動 -> 改成加速(保住默默示範的內容)"""
+    from core.decision import apply_motion
+    cfg.MOTION_MIN_SEC = 0.5
+    cfg.SILENCE_SPEED_FACTOR = 6.0
+    segs = [_sil(0, 300)]                      # 10 秒的靜音段
+    out = apply_motion(segs, [(100, 200)], 30.0)   # 中間有畫面活動
+    assert len(out) == 1, "不該把段落切開(切開會讓片段數暴增)"
+    assert out[0].action == "speed" and out[0].reason == "silence_motion"
+    print("  ✓ 沒講話但畫面在動 -> 加速保留")
+
+
+def test_motion_static_stays_deleted():
+    """畫面靜止的靜音段 -> 照舊剪掉"""
+    from core.decision import apply_motion
+    cfg.MOTION_MIN_SEC = 0.5
+    out = apply_motion([_sil(0, 300)], [(1000, 1100)], 30.0)   # 活動不重疊
+    assert out[0].action == "delete" and out[0].reason == "silence"
+    print("  ✓ 畫面靜止 -> 照舊剪掉")
+
+
+def test_motion_ignores_short_segments():
+    """微剪挖出的零點幾秒小停頓不套用畫面判定 —— 轉成變速只會產生
+    大量細碎的變速片段,是 Premiere 的效能地雷。"""
+    from core.decision import apply_motion
+    cfg.MOTION_MIN_SEC = 0.5
+    short = _sil(0, 9)                          # 0.3 秒,短於門檻
+    out = apply_motion([short], [(0, 9)], 30.0)
+    assert out[0].action == "delete", "短段落應維持原判"
+    print("  ✓ 太短的停頓不套用畫面判定")
+
+
+def test_motion_never_touches_music():
+    """音樂/音效段是刻意保護的 keep,畫面判定絕不能動到它"""
+    from core.decision import apply_motion
+    from core.models import Segment
+    music = Segment(0, 300, "keep", reason="music", confidence=0.8)
+    speech = Segment(300, 600, "keep")
+    out = apply_motion([music, speech], [(0, 600)], 30.0)
+    assert out[0].action == "keep" and out[0].reason == "music"
+    assert out[1].action == "keep"
+    print("  ✓ 音樂段與語音段不受影響")
+
+
+def test_motion_regions_from_diffs():
+    """變化量 -> 區間:超過門檻的連續時段才算,太短的丟掉"""
+    from modules.video_probe import motion_regions_from_diffs
+    cfg.MOTION_SENSITIVITY = 0.5
+    cfg.MOTION_MIN_SEC = 0.5
+    # 每秒 4 個取樣點:前 2 秒靜止、接著 2 秒在動
+    diff = np.array([0.0] * 8 + [3.0] * 8)
+    regions = motion_regions_from_diffs(diff, 4.0, 30.0)
+    assert len(regions) == 1, f"應該只有一段活動,實際 {regions}"
+    a, b = regions[0]
+    assert abs(a / 30.0 - 2.0) < 0.2, f"起點應在 2 秒附近,實際 {a / 30.0}"
+    print("  ✓ 畫面變化量正確轉成活動區間")
+
+
 if __name__ == "__main__":
     print("執行音樂/音效保護測試...")
     test_music_gap_protected()
@@ -150,4 +217,9 @@ if __name__ == "__main__":
     test_probe_constant_bgm_floor()
     test_quiet_detects_gap_between_speech()
     test_quiet_ignores_short_pause()
-    print("\n全部通過 ✓  音樂/音效保護與能量微剪邏輯正確。")
+    test_motion_turns_silence_into_speed()
+    test_motion_static_stays_deleted()
+    test_motion_ignores_short_segments()
+    test_motion_never_touches_music()
+    test_motion_regions_from_diffs()
+    print("\n全部通過 ✓  音樂保護、能量微剪、畫面活動判定皆正確。")

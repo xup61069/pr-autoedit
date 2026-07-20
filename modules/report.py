@@ -138,6 +138,27 @@ def generate(timeline: Timeline, words: list[Word],
   {music_rows}
 </table>""" if music_segs else ""
 
+    # 沒講話但畫面在動的段落(示範操作)。這些原本會被當停頓剪掉,
+    # 現在改成加速保留;時間碼是原始影片位置,方便對照確認抓得準不準。
+    motion_segs = [s for s in timeline.segments if s.reason == "silence_motion"]
+    motion_frames = sum(s.duration for s in motion_segs)
+    motion_rows = "".join(
+        f"<tr><td class='tc'>{tc(s.start)} ~ {tc(s.end)}</td>"
+        f"<td>{s.duration / fps:.1f} 秒</td></tr>"
+        for s in motion_segs)
+    motion_html = f"""
+<h2 style="font-size:1.1rem;font-weight:500">沒講話但畫面在動(已改為加速,不剪掉)</h2>
+<div class="summary">
+  下面 {len(motion_segs)} 段沒有講話,但畫面有變化 —— 判斷你在示範操作,
+  所以<b>加速帶過</b>而不是剪掉。時間碼是<b>原始影片</b>的位置。
+  該剪的沒剪掉(其實只是滑鼠晃了一下)→ 把「畫面活動靈敏度」調大;
+  示範被剪掉了 → 調小。
+</div>
+<table>
+  <tr><th>原始影片位置</th><th>長度</th></tr>
+  {motion_rows}
+</table>""" if motion_segs else ""
+
     doc = f"""<!DOCTYPE html>
 <html lang="zh-Hant"><head><meta charset="utf-8">
 <title>剪輯審閱報告</title>
@@ -213,6 +234,7 @@ def generate(timeline: Timeline, words: list[Word],
   <div class="stat"><div class="num">{tc(orig_frames)} → {tc(edited_frames)}</div><div class="lbl">{"原長 → 套用建議後" if live else "原長 → 剪後"}</div></div>
   <div class="stat"><div class="num">{n_del} / {n_spd}</div><div class="lbl">刪除段 / 快轉段</div></div>
   <div class="stat"><div class="num">{len(music_segs)}</div><div class="lbl">音樂/音效段(共 {tc(music_frames)},已保護)</div></div>
+  <div class="stat"><div class="num">{len(motion_segs)}</div><div class="lbl">畫面在動改加速(共 {tc(motion_frames)})</div></div>
   <div class="stat"><div class="num">{n_review}</div><div class="lbl">需人工審閱的切點</div></div>
 </div>
 <div class="summary">
@@ -225,6 +247,7 @@ def generate(timeline: Timeline, words: list[Word],
   {''.join(rows)}
 </table>
 {music_html}
+{motion_html}
 {_settings_summary()}
 </body></html>"""
 

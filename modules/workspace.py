@@ -29,6 +29,7 @@ _INTERNAL_FILES = {
     "01_mux_info.json",     # 上次混音的指紋(判斷能不能沿用)
     "01_audio_info.json",   # 上次聲音處理用的設定指紋
     "02_transcript.json",   # 語音辨識快取(重跑最花時間的就是它)
+    "02_motion.json",       # 畫面變化量快取(掃一次要幾十秒)
     "03_timeline.json",     # 決策引擎的段落清單
     "03_timeline.v1.json",  # 給剪輯引擎吃的中繼格式
     "04_project_raw.xml",   # 還沒加審閱標記的專案
