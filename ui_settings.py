@@ -41,6 +41,7 @@ import config.settings as cfg
 # 註:降噪外掛(VST)刻意不折疊,讓使用者一眼看到降噪設定
 COLLAPSED_GROUPS = [
     "冗詞與口頭禪", "字幕", "審閱標記", "音樂/音效保護", "畫面活動", "其他微調",
+    "辨識效能",
 ]
 
 FIELDS = [
@@ -71,6 +72,21 @@ FIELDS = [
      "tier": "common", "group": "辨識",
      "options": ["auto", "zh", "en", "ja", "ko", "yue", "de", "fr", "es"],
      "hint": "auto 自動偵測"},
+    # 這兩個放進面板的理由很實際:出事的時候要調的就是它們。
+    # 以前面板的錯誤說明會叫使用者「編輯 config/settings_local.json,
+    # 加一行 WHISPER_DEVICE: cpu」——那是整個面板唯一一處叫零程式基礎的人
+    # 去手改 JSON 的地方,而且改錯一個引號整支程式就起不來。
+    {"key": "WHISPER_DEVICE", "label": "用什麼跑辨識", "type": "select",
+     "tier": "advanced", "group": "辨識效能",
+     "options": ["cuda", "cpu"],
+     "show_if": {"ASR_ENGINE": ["faster-whisper"]},
+     "hint": "cuda 用 NVIDIA 顯卡(快很多)。顯卡出問題時改 cpu,慢但一定會動"},
+    {"key": "WHISPER_COMPUTE_TYPE", "label": "辨識運算精度", "type": "select",
+     "tier": "advanced", "group": "辨識效能",
+     "options": ["float16", "int8_float16", "int8", "float32"],
+     "show_if": {"ASR_ENGINE": ["faster-whisper"]},
+     "hint": "顯卡用 float16。報 float16 相關錯誤改 int8_float16;"
+             "選 cpu 跑要改 int8 或 float32"},
 
     # --- 分組:剪輯 ---
     {"key": "AUDIO_MODE", "label": "聲音處理方式", "type": "select",
@@ -179,6 +195,14 @@ FIELDS = [
      "tier": "advanced", "group": "其他微調", "min": 10, "max": 40, "step": 1,
      "soft": True, "show_if": {"MICRO_TRIM": [True]},
      "hint": "低於說話音量幾分貝算無聲。調大連氣音也剪,調小較保守"},
+    # 這是防「微剪把整個字吃掉」的安全閥。它預設就開著、也很少需要關,
+    # 但它直接決定「字幕會不會缺字」——曾經有 14.4% 的字從字幕消失就是
+    # 這件事。看得到才確認得了它是開的,所以放進面板。
+    {"key": "MICRO_TRIM_PROTECT_WORDS", "label": "微剪:不要剪掉整個字",
+     "type": "bool", "tier": "advanced", "group": "其他微調",
+     "show_if": {"MICRO_TRIM": [True]},
+     "hint": "保持開啟。輕聲的短字(你、它、的)音量本來就低,"
+             "整個被剪掉會少一個字、字幕也缺字"},
     # --- 分組:字幕 ---
     {"key": "SUBTITLE_MAX_CHARS", "label": "字幕行長上限", "type": "number",
      "tier": "advanced", "group": "字幕", "min": 8, "max": 40, "step": 1,
@@ -188,6 +212,11 @@ FIELDS = [
      "tier": "advanced", "group": "字幕", "min": 0.1, "max": 2, "step": 0.1,
      "soft": True,
      "hint": "停頓超過幾秒換行"},
+    {"key": "SUBTITLE_MAX_CHARS_NO_PUNCT", "label": "字幕行長上限(逐字稿沒標點時)",
+     "type": "number", "tier": "advanced", "group": "字幕",
+     "min": 8, "max": 40, "step": 1, "soft": True,
+     "hint": "辨識結果幾乎沒標點時改用這個較短的上限。"
+             "沒標點只能靠停頓和字數斷行,行太長會斷在很怪的地方"},
     {"key": "CONVERT_TO_TRADITIONAL", "label": "簡體轉繁體", "type": "bool",
      "tier": "advanced", "group": "字幕",
      "hint": "辨識偶爾會吐簡體字,開著保險"},
@@ -294,6 +323,48 @@ def _all_presets() -> tuple[dict, list]:
 # 放這裡是安全的:面板存檔時只收「表單控制項」上的值(見 main.js 的
 # collectValues),所以這些鍵不會被反寫進 settings_local.json 釘死。
 PANEL_EXTRA_KEYS = ["PREMIERE_VOICE_FX", "DENOISE_PER_CLIP_MAX"]
+
+# 「刻意不放進面板」的設定,每一個都要寫理由。
+#
+# 為什麼要有這張表:設定加在 config/settings.py 很容易,忘了回來加進 FIELDS
+# 也很容易——結果就是「程式在用、但面板上找不到」,使用者只能去手改
+# settings_local.json,而且從畫面上完全看不出來有這個東西。
+# 曾經一次累積了十個(DENOISE_PER_CLIP_MAX、WHISPER_DEVICE… )才被發現。
+#
+# 現在 tests/test_e2e_smoke.py 會檢查:每一個設定都必須「在 FIELDS 裡」、
+# 「在 PANEL_EXTRA_KEYS 裡」、或「在這張表裡並寫明理由」,三者選一。
+# 新增設定時你會被逼著做這個決定,而不是默默漏掉。
+PANEL_OMITTED_KEYS = {
+    # --- 關於設定本身的設定,不是使用者會調的東西 ---
+    "PRESET_KEYS": "定義「設定組合會動到哪些欄位」,是機制不是參數",
+    "SETTING_PRESETS": "內建組合的內容;面板有專用的組合選單可以套用/另存",
+    "VOCAB_PRESETS": "教學類型詞庫;面板有專用的「✎ 編輯類型」編輯器",
+
+    # --- 有意識地不做成控制項 ---
+    "WHISPER_INITIAL_PROMPT":
+        "填了會整個蓋掉自動提示詞,連尾巴那句「標點示範句」一起換掉,"
+        "字幕標點會全部消失而且毫無徵兆。做成輸入框等於把陷阱擺在使用者面前。"
+        "要加術語請用 CUSTOM_VOCAB(面板上的「我的額外術語」)",
+    "TARGET_TRUE_PEAK":
+        "真峰值上限 -1.0 dBTP 是串流平台的通用值,調它沒有實際好處",
+
+    # --- 重講偵測的細部參數 ---
+    # 這功能預設關閉、實測效益很小(4 支片 55 分鐘只抓到 12 秒有效的),
+    # 面板已經有主開關和相似度兩顆。再擺四顆旋鈕只會讓進階頁更難找東西,
+    # 而它們的調整價值接近零。真的要調的人有能力去改 settings.py。
+    "RETAKE_MIN_CHARS":
+        "重講偵測的細部門檻(至少重複幾個字才算)。功能預設關閉、實測效益很小,"
+        "面板已有主開關與相似度兩顆,再擺旋鈕只會讓進階頁更難找東西",
+    "RETAKE_MAX_CHARS":
+        "重講偵測一次最多砍幾個字。同樣是細部門檻,調它的價值遠低於"
+        "「要不要開這個功能」,而那顆面板上有",
+    "RETAKE_CONFIDENCE":
+        "重講刪除的信心值,它的作用只是「保證低於標記門檻所以一定下 marker」,"
+        "調高反而會讓誤砍的地方不再被標記出來——不該讓人不小心關掉這個保護",
+    "RETAKE_BOUNDARY_GAP_SEC":
+        "重講交界要求的停頓長度。這是擋掉排比句誤判的主力,實測調鬆之後"
+        "抓到的幾乎都是「左側是…右側是…」這種正常修辭,放出來只會鼓勵調壞它",
+}
 
 # 有標題的設定,報告的「本次設定」表才印得出人看得懂的名字。
 # 詞庫不是表單欄位(它有自己的編輯器),但改了要看得出來,所以補一個標題。

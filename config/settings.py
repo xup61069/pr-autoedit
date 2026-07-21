@@ -321,6 +321,15 @@ CUSTOM_VOCAB = []
 # 提示詞(給辨識引擎的開場提示)。
 #   None = 自動用上面的 CUSTOM_VOCAB 組出一句(建議,平常只要改詞表就好)
 #   填一段話 = 完全自訂,忽略 CUSTOM_VOCAB
+#
+# ⚠️ 這一項刻意「不」放進面板,而且建議你也不要自己填。
+# 自動組出來的提示詞尾巴有一句「帶標點的示範句」,那句話是字幕有標點的
+# 唯一保證——Whisper 會模仿提示詞的書寫風格,實測同一段音訊同一個模型:
+#     沒有示範句 -> 0 個句號、2 個逗號
+#     有示範句   -> 10 個句號、24 個逗號
+# 你在這裡填一段話,整個自動提示詞(含那句示範句)就被換掉了,
+# 字幕標點會全部消失,而且不會有任何錯誤訊息、報告上也看不出來。
+# 想加自己的術語請用 CUSTOM_VOCAB(它排最前面、永不被截斷),不要動這裡。
 WHISPER_INITIAL_PROMPT = None
 
 # ============================================================
@@ -531,12 +540,20 @@ SETTING_PRESETS = {
 #   1. 面板「點兩下恢復預設」要回到哪個值(以前是在 ui_settings.py 手抄一份,
 #      改了這裡忘了改那裡就會對不上);
 #   2. 審閱報告的「這次的設定跟預設差在哪」。
-import copy as _copy
-DEFAULTS = {_k: _copy.deepcopy(_v) for _k, _v in list(globals().items())
-            if _k.isupper()}
+# 這兩個是「關於設定的設定」,不是可調參數:
+#   不接受個人覆寫(否則會把快照本身蓋掉)
+#   也不進快照本身(見下面)
+_META_KEYS = ("DEFAULTS", "_META_KEYS")
 
-# 這個是「關於設定的設定」,不接受個人覆寫,否則會把快照本身蓋掉
-_META_KEYS = ("DEFAULTS",)
+import copy as _copy
+# ⚠️ 要排除 _META_KEYS,原因是這個模組會被 reload(測試會這樣做)。
+# reload 不會清空模組的 globals,所以第二次載入時,上一輪留下的 DEFAULTS
+# 和 _META_KEYS 已經在 globals() 裡了;而 "_META_KEYS".isupper() 在 Python
+# 是 True(底線不算小寫字母),於是快照會把「上一份快照」整個包進自己裡面,
+# 愈疊愈深。不排除的話,任何「逐一檢查每個設定」的程式都會被這兩個
+# 假設定絆倒。
+DEFAULTS = {_k: _copy.deepcopy(_v) for _k, _v in list(globals().items())
+            if _k.isupper() and _k not in _META_KEYS}
 
 
 # ============================================================

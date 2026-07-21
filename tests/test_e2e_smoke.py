@@ -307,6 +307,72 @@ def test_tests_never_touch_personal_config():
     print("  ✓ 沒有任何測試會寫到你的個人設定檔")
 
 
+def test_every_setting_is_reachable_or_explained():
+    """每一個設定都必須「面板調得到」或「寫明為什麼不放進面板」。
+
+    這個專案的設定加在 config/settings.py 太容易,忘了回來加進 FIELDS 也
+    太容易——結果是「程式在用、但面板上找不到」,使用者只能去手改
+    settings_local.json,而且從畫面上完全看不出來有這個東西存在。
+    曾經一次累積到十個才被發現(其中 WHISPER_DEVICE 最諷刺:面板自己的
+    錯誤說明就在教使用者去手改那個 JSON)。
+
+    這種漏掉沒有任何症狀,只能靠測試守。三條路選一條:
+      放進 FIELDS               -> 面板長出控制項
+      放進 PANEL_EXTRA_KEYS     -> 不做控制項,但面板讀得到(給程式邏輯用)
+      放進 PANEL_OMITTED_KEYS   -> 刻意不放,而且要寫理由
+    """
+    from ui_settings import FIELDS, PANEL_EXTRA_KEYS, PANEL_OMITTED_KEYS
+    covered = {f["key"] for f in FIELDS} | set(PANEL_EXTRA_KEYS)
+    unexplained = sorted(k for k in cfg.DEFAULTS
+                         if k not in covered and k not in PANEL_OMITTED_KEYS)
+    assert not unexplained, (
+        "這些設定程式在用、面板卻碰不到,而且沒說明為什麼:"
+        + "、".join(unexplained)
+        + "。請加進 ui_settings.py 的 FIELDS,或加進 PANEL_OMITTED_KEYS 並寫理由。")
+
+    # 反過來:面板讀得到、但設定裡根本沒這個東西(改名或刪掉時最容易發生)
+    ghosts = sorted(k for k in covered if not hasattr(cfg, k))
+    assert not ghosts, f"面板指向不存在的設定:{'、'.join(ghosts)}"
+
+    # 每個「刻意不放」都要有像樣的理由,不能寫「無」敷衍過去
+    lazy = sorted(k for k, why in PANEL_OMITTED_KEYS.items() if len(why) < 8)
+    assert not lazy, f"這些「刻意不放進面板」的理由太敷衍:{'、'.join(lazy)}"
+
+    # 表本身也不能爛掉:列了理由卻早就不存在的設定要清掉
+    stale = sorted(k for k in PANEL_OMITTED_KEYS if not hasattr(cfg, k))
+    assert not stale, f"PANEL_OMITTED_KEYS 裡有已經不存在的設定:{'、'.join(stale)}"
+
+    print(f"  ✓ {len(cfg.DEFAULTS)} 個設定:面板可調 {len(covered)}、"
+          f"刻意不放 {len(PANEL_OMITTED_KEYS)}、沒說明的 0")
+
+
+def test_panel_dump_is_valid():
+    """ui_settings.py dump 要吐得出面板吃得下的 JSON。
+
+    面板整個設定表單都靠這份 JSON 長出來,它壞掉的話面板只會顯示
+    「設定格式解析失敗」六個字,查不出是哪個欄位害的。"""
+    import json, subprocess
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    r = subprocess.run([sys.executable, "ui_settings.py", "dump"],
+                       cwd=root, capture_output=True)
+    assert r.returncode == 0, \
+        f"dump 失敗:{r.stderr.decode('utf-8', 'replace')[:500]}"
+    data = json.loads(r.stdout.decode("utf-8"))
+    for key in ("fields", "values", "defaults", "presets", "preset_keys",
+                "vocab_presets", "builtin_vocab", "vocab_budget"):
+        assert key in data, f"dump 少了「{key}」,面板會拿不到東西"
+    # 每個欄位都要有面板畫得出來的型別,而且值要真的存在
+    known = {"select", "number", "bool", "list", "category", "vstlist", "combo"}
+    for f in data["fields"]:
+        assert f["type"] in known, f"欄位「{f['key']}」的型別 {f['type']} 面板不認得"
+        assert f["key"] in data["values"], f"欄位「{f['key']}」沒有對應的值"
+        if f["type"] == "select":
+            v = data["values"][f["key"]]
+            assert v in f["options"], \
+                f"「{f['key']}」目前的值 {v!r} 不在選項 {f['options']} 裡,下拉會空白"
+    print(f"  ✓ 面板設定 JSON 正常({len(data['fields'])} 個欄位)")
+
+
 def test_voicefx_detection():
     """自動找 VoiceFX:要找得到、要指到「內層」、沒裝時要乾淨地空著。
 
@@ -354,4 +420,6 @@ if __name__ == "__main__":
     test_vocab_has_no_redundancy()
     test_vocab_local_merges_and_keeps_builtin()
     test_tests_never_touch_personal_config()
+    test_every_setting_is_reachable_or_explained()
+    test_panel_dump_is_valid()
     test_voicefx_detection()

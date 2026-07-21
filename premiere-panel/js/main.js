@@ -190,7 +190,12 @@
     { re: /cudnn|CUDA driver|no kernel image|CUDA error/i,
       msg: "顯示卡的 CUDA 環境有問題(驅動或 PyTorch 版本不合)。\n" +
            "  → 先改用 CPU 辨識確認跑得動(較慢但一定會動):\n" +
-           "     編輯 config/settings_local.json,加一行 \"WHISPER_DEVICE\": \"cpu\"" },
+           "     ⚙ 設定 > 進階設定 > 辨識效能 > 「用什麼跑辨識」改成 cpu,\n" +
+           "     同一區的「辨識運算精度」改成 int8,再跑一次" },
+    { re: /float16|compute type|efficient_attention/i,
+      msg: "顯示卡跑不動這個運算精度。\n" +
+           "  → ⚙ 設定 > 進階設定 > 辨識效能 > 「辨識運算精度」\n" +
+           "     改成 int8_float16,再跑一次" },
     { re: /scan failure|Unable to load plugin|VST/i,
       msg: "降噪外掛載入失敗。\n" +
            "  → 檢查「進階設定 > VST 外掛路徑」有沒有指到內層那顆 .vst3\n" +
