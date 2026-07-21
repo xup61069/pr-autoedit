@@ -298,7 +298,22 @@ def test_lookup_matches_bruteforce_on_random_timelines():
 
     rng = random.Random(11)
     checked = 0
-    for _ in range(60):
+
+    def compare(t, hi, label):
+        nonlocal checked
+        for f in range(-3, hi + 4):            # 含邊界與範圍外
+            checked += 1
+            assert brute_map_frame(t, f) == t.map_frame(f), \
+                f"{label}:map_frame 在 {f} 對到不同位置"
+        for _ in range(40):
+            a = rng.randint(-3, hi + 3)
+            b = a + rng.randint(0, 40)
+            checked += 1
+            assert brute_map_span(t, a, b) == t.map_span(a, b), \
+                f"{label}:map_span 在 ({a},{b}) 對到不同位置"
+
+    # (一)決策引擎產出的版面:段落首尾相連、彼此不重疊
+    for _ in range(40):
         segs, pos = [], 0
         for _ in range(rng.randint(1, 40)):
             d = rng.randint(1, 50)
@@ -306,18 +321,51 @@ def test_lookup_matches_bruteforce_on_random_timelines():
             segs.append(Segment(pos, pos + d, act,
                                 factor=6.0 if act == "speed" else 1.0))
             pos += d
-        t = RemapTable(segs, 30.0)
-        for f in range(-3, pos + 4):          # 含邊界與範圍外
-            checked += 1
-            assert brute_map_frame(t, f) == t.map_frame(f), \
-                f"map_frame 在 {f} 對到不同位置"
-        for _ in range(40):
-            a = rng.randint(-3, pos + 3)
-            b = a + rng.randint(0, 40)
-            checked += 1
-            assert brute_map_span(t, a, b) == t.map_span(a, b), \
-                f"map_span 在 ({a},{b}) 對到不同位置"
-    print(f"  ✓ 二分搜尋與笨方法逐點一致({checked} 次比對)")
+        compare(RemapTable(segs, 30.0), pos, "連續版面")
+
+    # (二)使用者在 Premiere 裡自己剪過的版面:**片段來源範圍可能重疊**
+    #
+    # 這一段是補上去的,因為原本的隨機資料是用 pos += d 一路往後接的,
+    # 永遠不會重疊 —— 剛好就是「開發時想到的那一種形狀」。
+    # 而重疊在真實使用裡很常見:同一段素材用兩次、把片段的把手往外拉,
+    # 都會產生重疊的來源範圍,而 from_spans 這條路正是為「使用者自己又
+    # 剪過」存在的。漏掉這種形狀的下場是 map_frame 回 None(意思是
+    # 「這個詞被剪掉了」),那些字幕就整片消失、拿到一份沒有時間點的檔。
+    for _ in range(40):
+        spans, tl = [], 0
+        for _ in range(rng.randint(1, 25)):
+            a = rng.randint(0, 200)
+            d = rng.randint(1, 60)
+            factor = rng.choice([1.0, 1.0, 2.0, 6.0])
+            spans.append((a, a + d, tl, factor))
+            tl += int(d / factor)
+        compare(RemapTable.from_spans(spans, 30.0), 260, "重疊版面")
+
+    print(f"  ✓ 二分搜尋與笨方法逐點一致({checked} 次比對,含重疊版面)")
+
+
+def test_overlapping_clips_keep_their_subtitles():
+    """來源範圍重疊時,字幕不可以憑空消失。
+
+    這是實際發生過的 bug:查找改成二分搜尋之後,只用 orig_start 定位,
+    於是漏掉「起點比較早、但一路延伸到查詢範圍裡」的那一列 ——
+    map_frame 回 None,而 None 的意思是「這個詞被剪掉了」,
+    字幕就整片不見,使用者拿到一份沒有時間點的 SRT。
+
+    重疊在真實使用裡很常見:同一段素材用兩次、把片段的把手往外拉。"""
+    # 片段 A 用了原片 0~100,片段 B 又用了原片 50~60
+    t = RemapTable.from_spans([(0, 100, 0, 1.0), (50, 60, 100, 1.0)], 30.0)
+    for f in (0, 25, 50, 55, 60, 75, 99):
+        assert t.map_frame(f) is not None, \
+            f"第 {f} 幀落在片段 A 裡面,卻被當成『已被剪掉』"
+    assert t.map_frame(150) is None, "真的不在任何片段裡的位置才該回 None"
+
+    words = [Word("在重疊區", 55 / 30, 58 / 30), Word("在後段", 80 / 30, 83 / 30)]
+    subs = t.build_subtitles(words, max_chars=18, max_gap_frames=15)
+    assert len(subs) >= 1, "重疊版面下字幕整個消失了"
+    assert any("重疊區" in s.text for s in subs), "重疊區的詞不見了"
+    assert any("後段" in s.text for s in subs), "重疊之後的詞也跟著不見了"
+    print("  ✓ 來源範圍重疊時,字幕與時間點都還在")
 
 
 def test_unsorted_spans_are_rejected_or_sorted():
@@ -366,4 +414,5 @@ if __name__ == "__main__":
     test_punct_keeps_normal_line_limit()
     test_lookup_matches_bruteforce_on_random_timelines()
     test_unsorted_spans_are_rejected_or_sorted()
+    test_overlapping_clips_keep_their_subtitles()
     print("\n全部通過 ✓  地基正確,可以往上蓋。")

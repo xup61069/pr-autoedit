@@ -65,32 +65,45 @@ class RemapTable:
     # 查找索引
     # -----------------------------------------------------------------
     def _index(self) -> None:
-        """建一份「每一列的原始起點」清單,給二分搜尋定位用。
+        """建索引給二分搜尋定位用。
 
         為什麼需要:map_frame / map_span 原本是從第一列開始線性掃到底,
         而 build_subtitles 會對「每一個詞」呼叫一次 —— 也就是
         詞數 × 片段數。剪得兇的長片兩邊都是上萬,實測 12000 詞 × 7000 片段
         要 6.8 秒,而且片長翻倍時間會變四倍(是整條管線裡擴展性最差的一段)。
 
-        映射表天生就是照原始時間排好的(_build 依序走過 segments,
-        from_spans 也依 timeline 位置排序),所以直接二分搜尋就好。
-        這裡順便驗一次有序,以防日後有人塞進沒排序的資料 —— 那樣二分搜尋
-        會安靜地找錯位置,字幕會對到錯的地方而且完全看不出來。"""
+        存兩份:
+          _starts       每一列的原始起點(已排序)
+          _max_end_upto 「到這一列為止,最大的原始結束點」
+
+        為什麼需要第二份 —— 這是踩過的坑:區間**可能重疊**。
+        使用者在 Premiere 裡把同一段素材用兩次、或把片段的把手往外拉,
+        兩個片段就會指向重疊的來源範圍(而 from_spans 這條路正是為
+        「使用者自己又剪過」而存在的)。這時候光靠 orig_start 二分搜尋
+        會漏掉「起點比較早、但一路延伸到查詢範圍裡」的那一列 ——
+        map_frame 會回 None,而 None 的意思是「這個詞被剪掉了」,
+        於是那些字幕整片消失。實測 100 幀的範圍裡錯了 15 個查詢。
+
+        _max_end_upto 是前綴最大值,所以一定是遞增的,可以二分搜尋:
+        第一個「前綴最大結束點 > 查詢起點」的索引,就是最早可能重疊的那一列;
+        在它前面的每一列都在查詢起點之前就結束了,不可能重疊。"""
         self._starts = [sp.orig_start for sp in self._spans]
         for a, b in zip(self._starts, self._starts[1:]):
             if b < a:
                 raise ValueError(
                     "映射表的區間沒有照原始時間排序,查找會出錯。"
                     "建表前請先把 segments/spans 排好。")
+        self._max_end_upto = []
+        run = None
+        for sp in self._spans:
+            run = sp.orig_end if run is None else max(run, sp.orig_end)
+            self._max_end_upto.append(run)
 
-    def _first_span_at_or_after(self, orig_frame: int) -> int:
-        """第一個「有可能涵蓋 orig_frame」的列索引。
+    def _search_from(self, orig_frame: int) -> int:
+        """第一個「有可能涵蓋 orig_frame」的列索引(重疊的情況也算得對)。
 
-        往前退一格是必要的:二分搜尋找的是 orig_start,而 orig_frame 很可能
-        落在「前一列的中間」(那一列的 orig_start 比它小)。不退這一格,
-        每個詞的開頭都會被判成落在刪除段裡,字幕會整片消失。"""
-        i = bisect.bisect_right(self._starts, orig_frame)
-        return max(0, i - 1)
+        在它之前的每一列都已經在 orig_frame 之前結束,掃了也是白掃。"""
+        return bisect.bisect_right(self._max_end_upto, orig_frame)
 
     # -----------------------------------------------------------------
     # 替代建構式:直接用「原始區間 -> 時間軸位置」清單建表
@@ -123,9 +136,9 @@ class RemapTable:
     # 落在刪除段的回傳 None(代表這個詞被剪掉了)
     # -----------------------------------------------------------------
     def map_frame(self, orig_frame: int) -> Optional[int]:
-        # 從二分搜尋定位的那一列開始找。區間彼此不重疊,所以
-        # 一旦某一列的起點已經超過 orig_frame,後面的只會更遠,可以收工。
-        for sp in self._spans[self._first_span_at_or_after(orig_frame):]:
+        # 從「最早可能涵蓋這一幀」的列開始找(見 _index 對重疊的說明)。
+        # 起點一旦超過 orig_frame,後面的只會更遠,可以收工。
+        for sp in self._spans[self._search_from(orig_frame):]:
             if sp.orig_start > orig_frame:
                 break
             if sp.orig_start <= orig_frame < sp.orig_end:
@@ -144,8 +157,8 @@ class RemapTable:
         那樣會把「其實還聽得到」的詞整個丟掉,字幕就會莫名其妙缺字。
         改成看「有沒有任何一部分留著」,留著就對到留下來的那一段。"""
         first = last = None
-        for sp in self._spans[self._first_span_at_or_after(orig_start):]:
-            # 區間有序且不重疊:起點已經跑到查詢範圍之後就不必再看下去
+        for sp in self._spans[self._search_from(orig_start):]:
+            # 起點已經跑到查詢範圍之後就不必再看下去(區間照起點排序)
             if sp.orig_start >= orig_end:
                 break
             a = max(orig_start, sp.orig_start)
