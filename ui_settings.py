@@ -49,6 +49,13 @@ FIELDS = [
     {"key": "VOCAB_CATEGORIES", "label": "教學類型", "type": "category",
      "tier": "common", "group": "辨識",
      "hint": "載入該領域術語,提升專有名詞辨識率。可複選,但提示詞有長度上限,選太多會被截斷(超出時會提示)"},
+    # 放在教學類型正下方:它跟教學類型是同一件事的兩半(現成的 vs 你自己的),
+    # 分開放使用者根本找不到。以前它在「進階頁 > 冗詞與口頭禪」而且預設折疊,
+    # 名字又跟冗詞無關,等於藏了三層。
+    {"key": "CUSTOM_VOCAB", "label": "我的額外術語", "type": "list",
+     "tier": "common", "group": "辨識",
+     "hint": "教學類型以外的專有名詞:頻道名、人名、慣用詞,逗號分隔。"
+             "這一欄優先權最高、永遠不會被截斷,重要的詞放這裡最保險"},
     {"key": "ASR_ENGINE", "label": "辨識引擎", "type": "select",
      "tier": "common", "group": "辨識", "options": ["faster-whisper", "funasr"],
      "hint": "faster-whisper:通用,中英夾雜較佳。funasr:純中文備選"},
@@ -172,10 +179,6 @@ FIELDS = [
      "tier": "advanced", "group": "其他微調", "min": 10, "max": 40, "step": 1,
      "soft": True, "show_if": {"MICRO_TRIM": [True]},
      "hint": "低於說話音量幾分貝算無聲。調大連氣音也剪(更兇),調小較保守"},
-    {"key": "CUSTOM_VOCAB", "label": "自訂術語", "type": "list",
-     "tier": "advanced", "group": "冗詞與口頭禪",
-     "hint": "教學類型以外的專有名詞:頻道名、人名、慣用詞。逗號分隔。此欄優先權最高,不會被截斷"},
-
     # --- 分組:字幕 ---
     {"key": "SUBTITLE_MAX_CHARS", "label": "字幕行長上限", "type": "number",
      "tier": "advanced", "group": "字幕", "min": 8, "max": 40, "step": 1,
