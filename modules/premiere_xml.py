@@ -36,27 +36,39 @@ _LABELS = {
     "silence": "Rose",       # 靜音:粉紅(候選:刪除或快轉)
     "silence_motion": "Lavender",  # 沒講話但畫面在動:薰衣草(示範操作,加速帶過)
     "music": "Caribbean",    # 音樂/音效:青綠(受保護,別剪)
+    "noise": "Yellow",       # 短促雜音(咳嗽/滑鼠聲):黃(候選:刪除)
     "filler": "Violet",      # 冗詞:紫(候選:刪除)
     "retake": "Mango",       # 說錯重講的前一次:橘(候選:刪除,務必先確認)
 }
 
 _CLIP_NAMES = {
-    "silence": "靜音", "silence_motion": "示範",
+    "silence": "靜音", "silence_motion": "示範", "noise": "雜音",
     "music": "音樂", "filler": "冗詞", "retake": "重講",
 }
 
 
+# 決策引擎的 reason -> 這裡的段落種類。
+#
+# ⚠️ 這張表要跟 decision.py 產出的 reason 保持同步。以前這裡是一串寫死的
+# if,只認得 music/silence/filler/retake 四種;後來決策引擎多出了
+# silence_motion(畫面在動的示範段)和 noise(咳嗽),沒有人回來補這裡,
+# 於是它們一路掉進 else 被當成「一般語音」——在 Premiere 裡沒有顏色、
+# 名字就是影片名,跟真的講話段完全分不出來,「選取標籤群組」也選不到。
+# 更糟的是上面 _LABELS 早就寫好了 silence_motion 的顏色,看程式碼會以為有做。
+# 改成查表:漏掉新種類時,上面的 _LABELS/_CLIP_NAMES 也會一起缺,比較難只補一半。
+_KIND_BY_REASON = {
+    "music": "music",
+    "silence": "silence",
+    "silence_motion": "silence_motion",
+    "noise": "noise",
+    "filler": "filler",
+    "retake": "retake",
+}
+
+
 def _segment_kind(s) -> str:
-    """把決策段落歸類成五種:speech / silence / music / filler / retake"""
-    if s.reason == "music":
-        return "music"
-    if s.reason == "silence":
-        return "silence"
-    if s.reason == "filler":
-        return "filler"
-    if s.reason == "retake":
-        return "retake"
-    return "speech"
+    """把決策段落歸類成標籤種類;不認得的 reason 一律當成語音(不上標籤)"""
+    return _KIND_BY_REASON.get(s.reason, "speech")
 
 
 def export_live_xml(timeline: Timeline, out_xml: str,
@@ -144,7 +156,9 @@ def export_live_xml(timeline: Timeline, out_xml: str,
         base = _CLIP_NAMES[kind]
         if kind == "filler" and s.text:
             return f"{base} {s.text}"
-        if kind == "silence":
+        # 長度直接寫在片段名上:這三種都是「要不要留」的判斷題,
+        # 而長度是最快的判斷依據,不用點進去看屬性
+        if kind in ("silence", "silence_motion", "noise"):
             return f"{base} {s.duration / fps:.1f}s"
         return base
 
@@ -231,9 +245,13 @@ def export_live_xml(timeline: Timeline, out_xml: str,
     for s in segs:
         k = _segment_kind(s)
         n_by[k] = n_by.get(k, 0) + 1
-    print(f"  活專案 XML:{len(segs)} 個片段"
-          f"(語音 {n_by.get('speech', 0)}、靜音 {n_by.get('silence', 0)}、"
-          f"音樂 {n_by.get('music', 0)}、冗詞 {n_by.get('filler', 0)})、"
+    # 每一種都報,包含數量為 0 的:看到「示範 0」你才知道是真的沒有,
+    # 而不是這個種類又被漏掉了(以前示範跟雜音就是這樣消失在語音裡的)
+    bits = "、".join(f"{label} {n_by.get(kind, 0)}" for kind, label in (
+        ("speech", "語音"), ("silence", "靜音"), ("silence_motion", "示範"),
+        ("music", "音樂"), ("noise", "雜音"), ("filler", "冗詞"),
+        ("retake", "重講")))
+    print(f"  活專案 XML:{len(segs)} 個片段({bits})、"
           f"{n_marks} 個 marker -> {out_xml}")
     return out_xml
 
