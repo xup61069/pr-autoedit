@@ -158,6 +158,9 @@ h1 {
 .row { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 .btn.ghost { background: transparent; border-color: #4a4a4a; color: #bbb; }
 .btn.ghost:hover:not(:disabled) { background: #333; color: #ddd; }
+/* 停止:紅框但不填滿 —— 要一眼找得到,又不會醒目到像主要動作 */
+.btn.stop { background: transparent; border-color: #7a3b3b; color: #e08a8a; }
+.btn.stop:hover:not(:disabled) { background: #3a2626; color: #f0a0a0; }
 .section-head.plain {
   border: none; background: transparent; padding: 4px 0; color: #aaa;
   display: inline-flex; gap: 4px; margin-bottom: 4px;

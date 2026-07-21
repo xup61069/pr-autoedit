@@ -12,6 +12,7 @@ python -m tests.test_decision
 python -m tests.test_e2e_smoke
 node tests/test_panel_voicefx.js    # 面板掛人聲效果的邏輯(不必開 Premiere)
 node tests/test_panel_vocab.js      # 教學類型編輯器的額度試算
+node tests/test_panel_stop.js       # 停止鈕:收整棵行程樹、停止不等於失敗
 ```
 
 ## 介面文案在哪裡改

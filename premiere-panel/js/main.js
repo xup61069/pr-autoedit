@@ -60,13 +60,53 @@
   // 正在跑的 Python 子行程。面板被關掉/重新載入時要把它殺掉 ——
   // 不然它會變成沒人管的孤兒行程,繼續佔著顯示卡記憶體不放。
   var running = null;
+  var stopping = false;      // 使用者按了停止(用來分辨「停止」與「失敗」)
+
   function track(proc) {
     running = proc;
-    proc.on("close", function () { if (running === proc) running = null; });
+    stopping = false;
+    showStop(true);
+    proc.on("close", function () {
+      if (running === proc) { running = null; showStop(false); }
+    });
     return proc;
   }
+
+  function showStop(on) {
+    var b = $("stop");
+    if (!b) return;
+    b.style.display = on ? "" : "none";
+    if (on) b.disabled = false;
+  }
+
+  /*
+   * 停掉整棵行程樹。
+   *
+   * ⚠️ 不能只用 proc.kill():在 Windows 上它只結束直接的子行程(python.exe),
+   * Python 底下再開的 ffmpeg 會變成孤兒繼續跑 —— 繼續寫輸出檔、繼續佔著
+   * 檔案鎖,使用者看到的就是「按了停止卻好像沒停」,而且下次重跑還會
+   * 因為檔案被鎖住而失敗。taskkill 的 /T 會連子孫一起收掉。
+   */
+  function killTree(proc, done) {
+    if (!proc) { if (done) done(); return; }
+    var fired = false;
+    function once() { if (!fired) { fired = true; if (done) done(); } }
+    try {
+      var t = cp.spawn("taskkill", ["/PID", String(proc.pid), "/T", "/F"],
+        { windowsHide: true });
+      t.on("close", once);
+      t.on("error", function () {          // 沒有 taskkill 就退回原本的做法
+        try { proc.kill(); } catch (e) {}
+        once();
+      });
+    } catch (e) {
+      try { proc.kill(); } catch (e2) {}
+      once();
+    }
+  }
+
   window.addEventListener("beforeunload", function () {
-    if (running) { try { running.kill(); } catch (e) {} }
+    if (running) killTree(running);
   });
 
   // 狀態列:文字 + 顏色(busy=黃、ok=綠、err=紅,不給 kind 就是預設藍)
@@ -998,6 +1038,18 @@
     saveSettings(function () { runPipeline(); }, "saveMsg");
   });
 
+  // ---------- 停止 ----------
+  // 停掉正在跑的那一個(一鍵剪輯、重算、產字幕都算)。
+  // 按鈕先鎖住:taskkill 收整棵樹要一點時間,連按只會讓人以為沒反應。
+  $("stop").addEventListener("click", function () {
+    if (!running) return;
+    stopping = true;
+    $("stop").disabled = true;
+    setStatus("停止中…", "busy");
+    appendLog("\n■ 已要求停止,正在收掉 Python 與它開的 ffmpeg…\n");
+    killTree(running);
+  });
+
   function runPipeline() {
     $("run").disabled = true;
     $("pick").disabled = true;
@@ -1020,6 +1072,16 @@
     });
     proc.on("close", function (code) {
       $("pick").disabled = false;
+      // 使用者自己按停止的,不是失敗:不要跳錯誤說明、不要嗶錯誤音,
+      // 那會讓人以為是程式壞了。
+      if (stopping) {
+        setStatus("已停止", "");
+        appendLog("\n■ 已停止。這次沒有產出序列;"
+          + "再按一次「一鍵自動剪輯」會從頭跑,"
+          + "已經辨識完的部分會沿用,不必重來。\n");
+        $("run").disabled = false;
+        return;
+      }
       if (code !== 0) {
         setStatus("處理失敗,說明在下方", "err");
         explainInto();
@@ -1208,6 +1270,10 @@
         setAfterButtons(true);
       });
       proc.on("close", function (code) {
+        if (stopping) {
+          afterSay("已停止,舊序列沒有被動到", true);
+          setAfterButtons(true); return;
+        }
         if (code !== 0) {
           afterSay("重算失敗,說明在下方", false);
           explainInto();
