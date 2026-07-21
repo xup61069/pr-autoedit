@@ -220,35 +220,91 @@ def test_vocab_local_merges_and_keeps_builtin():
     而且內建那份必須原封不動留著——不然「還原成內建」就回不去了。
 
     也要確認檔案壞掉時不會把整條管線帶下水:這個檔是使用者會自己去編的,
-    少一個逗號就整支程式起不來的話,他只會看到一堆看不懂的錯誤。"""
-    import json, importlib, shutil
-    p = os.path.join(os.path.dirname(__file__), "..", "config", "vocab_local.json")
-    bak = p + ".testbak"
-    had = os.path.exists(p)
-    if had:
-        shutil.copy2(p, bak)
+    少一個逗號就整支程式起不來的話,他只會看到一堆看不懂的錯誤。
+
+    ⚠️ 這個測試「不」碰使用者真正的 config/vocab_local.json。
+    以前它是直接對那個檔寫入測試資料(中間還故意寫一段壞掉的 JSON),
+    靠 finally 還原。只要跑到一半被 Ctrl-C、被面板的停止鈕收掉、或當機,
+    使用者的個人詞庫就留在「測試資料」或「壞掉的 JSON」狀態,
+    而備份是固定檔名 .testbak,跑第二次就被自己蓋掉,救都救不回來。
+    現在改成整個 config 資料夾複製到暫存區,對副本操作,永遠碰不到本尊。"""
+    import json, importlib, shutil, tempfile, sys as _sys
+
+    real_cfg_dir = os.path.join(os.path.dirname(__file__), "..", "config")
+    sandbox = tempfile.mkdtemp(prefix="vocab_test_")
     try:
-        with open(p, "w", encoding="utf-8") as f:
-            json.dump({"剪輯": ["我的自訂詞"], "木工": ["榫接", "刨刀"]},
-                      f, ensure_ascii=False)
-        m = importlib.reload(cfg)
+        # 複製一份可拋棄的 config 套件(settings.py 會去讀自己旁邊的
+        # vocab_local.json,所以要連 settings.py 一起搬過去)
+        pkg = os.path.join(sandbox, "config")
+        os.makedirs(pkg)
+        shutil.copy2(os.path.join(real_cfg_dir, "settings.py"), pkg)
+        open(os.path.join(pkg, "__init__.py"), "w").close()
+        vocab_file = os.path.join(pkg, "vocab_local.json")
+
+        def load(vocab_text):
+            """用 sandbox 裡的 config 重新載入一次 settings,回傳那個模組"""
+            with open(vocab_file, "w", encoding="utf-8") as f:
+                f.write(vocab_text)
+            saved_path, saved_mods = list(_sys.path), {}
+            for name in ("config", "config.settings"):
+                saved_mods[name] = _sys.modules.pop(name, None)
+            _sys.path.insert(0, sandbox)
+            try:
+                import config.settings as sandboxed
+                return importlib.reload(sandboxed)
+            finally:
+                _sys.path[:] = saved_path
+                for name, mod in saved_mods.items():
+                    if mod is not None:
+                        _sys.modules[name] = mod
+                    else:
+                        _sys.modules.pop(name, None)
+
+        m = load(json.dumps({"剪輯": ["我的自訂詞"], "木工": ["榫接", "刨刀"]},
+                            ensure_ascii=False))
         assert m.VOCAB_PRESETS["剪輯"] == ["我的自訂詞"], "同名應該蓋掉內建那一類"
         assert m.VOCAB_PRESETS["木工"] == ["榫接", "刨刀"], "新名字應該多一類"
         assert "Lumetri" in m.DEFAULTS["VOCAB_PRESETS"]["剪輯"], \
             "內建那份被改掉了,還原成內建會回不去"
 
         # 檔案壞掉:應該安靜地當作沒有,而不是讓 import 直接爆掉
-        with open(p, "w", encoding="utf-8") as f:
-            f.write("{ 這不是合法的 JSON")
-        m = importlib.reload(cfg)
+        m = load("{ 這不是合法的 JSON")
         assert "Lumetri" in m.VOCAB_PRESETS["剪輯"], "檔案壞掉時應退回內建詞庫"
         print("  ✓ 個人詞庫:同名覆蓋、新名新增、內建保留、檔案壞掉不會爆")
     finally:
-        if had:
-            shutil.move(bak, p)
-        elif os.path.exists(p):
-            os.remove(p)
-        importlib.reload(cfg)
+        shutil.rmtree(sandbox, ignore_errors=True)
+        importlib.reload(cfg)      # 確保後面的測試拿到的是真正的設定
+
+
+def test_tests_never_touch_personal_config():
+    """測試不准動使用者的個人設定檔。
+
+    settings_local.json(面板存的設定)與 vocab_local.json(自訂詞庫)
+    是使用者的東西,測試跑一跑把它們改掉或弄壞是不能接受的——
+    尤其測試可能被 Ctrl-C 或面板的停止鈕從中間砍斷,finally 不一定跑得到。
+    這裡直接對整個 tests/ 資料夾做字串檢查,擋住「以後有人又這樣寫」。"""
+    import re
+    tests_dir = os.path.dirname(os.path.abspath(__file__))
+    personal = ("settings_local.json", "vocab_local.json", "presets_local.json")
+    # 只揪「寫入」:讀取個人設定來確認測試前提是可以的
+    write_hint = re.compile(r'open\([^)]*["\']w|shutil\.(copy|move)\(')
+    offenders = []
+    for fn in sorted(os.listdir(tests_dir)):
+        if not fn.endswith(".py"):
+            continue
+        with open(os.path.join(tests_dir, fn), encoding="utf-8") as f:
+            src = f.read()
+        for line_no, line in enumerate(src.splitlines(), 1):
+            if any(p in line for p in personal) and write_hint.search(line):
+                offenders.append(f"{fn}:{line_no}")
+        # 組出路徑再寫入的寫法(變數繞一手),用「真的 config 資料夾」當線索
+        if 'real_cfg_dir' not in src:
+            for p in personal:
+                if f'"config", "{p}"' in src or f"'config', '{p}'" in src:
+                    offenders.append(f"{fn}(組出個人設定檔路徑)")
+    assert not offenders, \
+        "測試不該寫入使用者的個人設定檔,請改用暫存資料夾:" + "、".join(offenders)
+    print("  ✓ 沒有任何測試會寫到你的個人設定檔")
 
 
 def test_voicefx_detection():
@@ -297,4 +353,5 @@ if __name__ == "__main__":
     test_workspace_tidies_output()
     test_vocab_has_no_redundancy()
     test_vocab_local_merges_and_keeps_builtin()
+    test_tests_never_touch_personal_config()
     test_voicefx_detection()
