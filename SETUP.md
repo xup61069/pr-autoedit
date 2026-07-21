@@ -73,11 +73,21 @@ pip install -r requirements.txt
 
 ### 7. 驗證安裝
 ```
-python -m tests.test_remap
 python -m tests.test_decision
+python -m tests.test_remap
+python -m tests.test_music
+python -m tests.test_live_xml
+python -m tests.test_live_subs
 python -m tests.test_e2e_smoke
+node tests/test_panel_voicefx.js
+node tests/test_panel_vocab.js
+node tests/test_panel_stop.js
 ```
-三個都顯示「全部通過」就代表核心沒問題。
+九套都顯示「全部通過」就代表核心沒問題。前六套是 Python,後三套是面板的
+邏輯(用假的 Premiere 環境跑,不必真的開 Premiere;需要有 Node.js,
+沒裝的話跳過那三套也沒關係)。
+
+> 這幾套都不需要 GPU、ffmpeg 或影片,幾秒就跑完。
 
 ---
 
@@ -206,8 +216,9 @@ python pipeline.py D:\影片\我的教學_0718.mp4 --skip-audio
 
 ### 想全程不離開 Premiere?(推薦)
 專案內有一個 `premiere-panel\` 資料夾,是 Premiere 面板:選影片、調設定、
-一鍵剪輯、自動匯入,剪完還有「開啟審閱報告 / 重算剪輯 / 掛降噪 / 產字幕」
-四顆按鈕。安裝與使用見 `premiere-panel\README.md`。
+一鍵剪輯、自動匯入,跑到一半可以按停止。剪完還有「開啟審閱報告 /
+重算剪輯 / 幫目前序列掛人聲處理 / 用目前序列產生字幕 / 清除快取」五顆按鈕。
+安裝與使用見 `premiere-panel\README.md`。
 
 ---
 
@@ -220,10 +231,16 @@ python pipeline.py D:\影片\我的教學_0718.mp4 --skip-audio
 → PATH 沒設好,或 cmd 沒重開。重設 PATH 後關掉 cmd 重開。
 
 **Whisper 報 `float16` 相關錯誤**
-→ 改 `config\settings.py` 的 `WHISPER_COMPUTE_TYPE = "int8_float16"`。
+→ 面板:⚙ 設定 > 進階設定 > 辨識效能 > 「辨識運算精度」改成 `int8_float16`。
+   (手動改的話是 `config\settings.py` 的 `WHISPER_COMPUTE_TYPE`)
 
 **GPU 記憶體不足(out of memory)**
-→ 把 `WHISPER_MODEL` 改成 `"medium"`,準確度略降但省一半記憶體。
+→ 面板:⚙ 設定 > 辨識 > 「辨識模型」把 `large-v3` 改成 `medium`,
+   準確度略降但省一半以上記憶體。
+
+**顯示卡怎麼樣都跑不動,想先確認其他部分是好的**
+→ 面板:⚙ 設定 > 進階設定 > 辨識效能 > 「用什麼跑辨識」改成 `cpu`,
+   同一區的「辨識運算精度」改成 `int8`。慢很多但一定會動。
 
 **auto-editor 相關錯誤**
 → 程式會直接停下來並說明,不會假裝成功(以前只印一行警告就結束,

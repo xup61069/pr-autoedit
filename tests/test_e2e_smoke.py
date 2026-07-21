@@ -373,6 +373,89 @@ def test_panel_dump_is_valid():
     print(f"  ✓ 面板設定 JSON 正常({len(data['fields'])} 個欄位)")
 
 
+def test_docs_list_every_test_suite():
+    """教人「改動前先跑測試」的文件,必須列滿全部九套。
+
+    這個專案的 bug 有一整類是這樣活下來的:文件只列三到六套,
+    漏掉的正好是 test_music(守著畫面判定與雜音剪除)。照文件跑 -> 全綠 ->
+    交付,而 live 模式的標籤 bug 完全沒被碰到。文件漏列跟程式有 bug
+    一樣危險,因為它決定了「你以為自己驗過了」。"""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    tests_dir = os.path.join(root, "tests")
+    py = sorted(f[:-3] for f in os.listdir(tests_dir)
+                if f.startswith("test_") and f.endswith(".py"))
+    js = sorted(f for f in os.listdir(tests_dir)
+                if f.startswith("test_") and f.endswith(".js"))
+
+    for doc in ("CONTRIBUTING.md", "AGENTS.md", "SETUP.md"):
+        text = open(os.path.join(root, doc), encoding="utf-8").read()
+        missing = [n for n in py if f"tests.{n}" not in text]
+        missing += [n for n in js if n not in text]
+        assert not missing, (
+            f"{doc} 的測試清單漏了:{'、'.join(missing)}。"
+            "照這份文件跑測試的人會以為自己驗過了,其實沒有。")
+
+    # 別的地方報的套數也要對得上
+    readme = open(os.path.join(root, "README.md"), encoding="utf-8").read()
+    assert f"{_cn_num(len(py))}套 Python" in readme, \
+        f"README 說的 Python 測試套數跟實際({len(py)} 套)對不上"
+    assert f"{_cn_num(len(js))}套面板" in readme, \
+        f"README 說的面板測試套數跟實際({len(js)} 套)對不上"
+    print(f"  ✓ 三份文件都列滿 {len(py)} 套 Python + {len(js)} 套面板測試")
+
+
+def _cn_num(n: int) -> str:
+    return "零一二三四五六七八九十"[n] if n <= 10 else str(n)
+
+
+def test_docs_dont_reference_missing_files():
+    """文件裡指到的專案檔案要真的存在。
+
+    改檔名、搬資料夾之後,文件裡的路徑會靜靜地變成死連結。對零程式基礎的
+    使用者來說,「照著做卻找不到那個檔」跟程式壞掉沒有兩樣。"""
+    import re
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    docs = [f for f in os.listdir(root) if f.endswith(".md")]
+    docs += [os.path.join("premiere-panel", "README.md")]
+
+    # 專案裡實際存在的檔名(含不帶資料夾的簡稱:文件常寫「remap.py」
+    # 而不是「core/remap.py」,那不算錯,讀的人找得到)
+    present = set()
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in
+                       (".git", "__pycache__", "output", "venv", ".venv", "dist")]
+        rel = os.path.relpath(dirpath, root).replace("\\", "/").lstrip("./")
+        for fn in filenames:
+            present.add(fn)
+            present.add(f"{rel}/{fn}" if rel not in (".", "") else fn)
+
+    # 這些不是專案檔案,是「跑過之後才會產生的產物」或使用者的個人設定,
+    # 版控裡本來就不會有,不能拿來當死連結
+    def is_runtime_artifact(ref: str) -> bool:
+        base = ref.rsplit("/", 1)[-1]
+        return (base[:1].isdigit()                    # 04_report.html 之類的產物
+                or ref.startswith(("output/", "_work/"))
+                or "/output/" in ref or "/_work/" in ref
+                or "_local." in base or base == "panel.json")
+
+    pat = re.compile(
+        r"`([\w\-./\\]+\.(?:py|js|jsx|json|md|html|css|bat|ps1|xml|reg|txt))`")
+    bad = []
+    for doc in docs:
+        p = os.path.join(root, doc)
+        if not os.path.exists(p):
+            continue
+        for m in pat.finditer(open(p, encoding="utf-8").read()):
+            ref = m.group(1).replace("\\", "/").lstrip("./")
+            if ref.startswith("http") or "*" in ref or is_runtime_artifact(ref):
+                continue
+            if ref in present or ref.rsplit("/", 1)[-1] in present:
+                continue
+            bad.append(f"{doc} -> {m.group(1)}")
+    assert not bad, "文件指到不存在的檔案:" + "、".join(bad)
+    print(f"  ✓ {len(docs)} 份文件裡提到的專案檔案都存在")
+
+
 def test_voicefx_detection():
     """自動找 VoiceFX:要找得到、要指到「內層」、沒裝時要乾淨地空著。
 
@@ -422,4 +505,6 @@ if __name__ == "__main__":
     test_tests_never_touch_personal_config()
     test_every_setting_is_reachable_or_explained()
     test_panel_dump_is_valid()
+    test_docs_list_every_test_suite()
+    test_docs_dont_reference_missing_files()
     test_voicefx_detection()

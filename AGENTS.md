@@ -42,8 +42,12 @@
 - `baked`(預設,直接剪好):auto-editor 產 XML,決策直接烘進去(cut/timeremap)。
   「隨時可調」靠面板的「重算剪輯」鈕:pipeline --skip-audio 幾秒重算、匯入新序列。
 - `live`(備選,活專案):`premiere_xml.export_live_xml` 自製 FCP7 XML,所有段落
-  切開但全保留(start==in、end==out),用標籤色分類(靜音=Rose、音樂=Caribbean、
-  冗詞=Violet)。決策只是「建議」,使用者在 Premiere 裡批次處理、隨時反悔。
+  切開但全保留(start==in、end==out),用標籤色分類(靜音=Rose、示範=Lavender、
+  音樂=Caribbean、雜音=Yellow、冗詞=Violet、重講=Mango)。決策只是「建議」,
+  使用者在 Premiere 裡批次處理、隨時反悔。
+  ⚠️ 新增 `Segment.reason` 的種類時,一定要回頭補 `premiere_xml` 的
+  `_KIND_BY_REASON` / `_LABELS` / `_CLIP_NAMES`,否則那種段落會沒有顏色、
+  在 Premiere 裡跟正常講話段完全分不出來(`test_live_xml` 會擋住這件事)。
   剪完後可用 `modules/live_subs.py` 依序列實際版面重新對位字幕(P5)。
   ⚠️ 實測:大量小片段+標籤在 Premiere 是效能地雷(長片會卡),所以不是預設;
   設計新功能時要控制 clip 數量。
@@ -91,13 +95,27 @@
 **動 core/ 底下任何檔案後,一定要重跑對應測試:**
 
 ```
-python -m tests.test_remap      # 動了 remap.py 或 models.py
 python -m tests.test_decision   # 動了 decision.py 或 config/settings.py
+python -m tests.test_remap      # 動了 remap.py 或 models.py
+python -m tests.test_music      # 動了 audio_probe / video_probe / 音樂保護 / 畫面判定
+python -m tests.test_live_xml   # 動了 premiere_xml.py 或新增了段落種類
+python -m tests.test_live_subs  # 動了 live_subs.py 或 RemapTable.from_spans
 python -m tests.test_e2e_smoke  # 動了任何東西,跑這個確認主幹沒斷
 node tests/test_panel_voicefx.js  # 動了 host.jsx 的掛效果邏輯或 PREMIERE_VOICE_FX
 node tests/test_panel_vocab.js    # 動了提示詞長度估算或教學類型編輯器
 node tests/test_panel_stop.js     # 動了停止鈕或子行程的收尾邏輯
 ```
+
+⚠️ **九套全部都要跑,而且不要接管線。**`python -m tests.xxx | tail` 的離開碼
+是 `tail` 的,失敗的測試會被靜靜吃掉。這份清單以前只列六套,漏的正好是
+`test_music` —— 守著畫面判定與雜音剪除的那一套,結果 live 模式的標籤 bug
+在「測試全綠」的狀態下活了很久。
+
+⚠️ **九套全綠不等於沒問題。**這個專案已經被同一種盲點咬過三次:測試餵進去的
+假資料剛好只涵蓋「開發當時想到的那一種」。畫面判定的測試全部寫死
+`action="delete"`(使用者實際在用的 speed 從沒被測過);活專案的假資料只有
+四種段落(後來新增的 silence_motion / noise 就這樣掉進「當成語音」)。
+加測試時先問:**這個功能的輸入,實際上還有哪幾種形狀?**
 
 `test_panel_voicefx.js` 用一個假的 Premiere 跑 `host.jsx`,所以中文版介面、
 上千個片段、效果不存在這幾種情況不必真的開 Premiere 就測得到
@@ -137,9 +155,10 @@ node tests/test_panel_stop.js     # 動了停止鈕或子行程的收尾邏輯
 
 - **Premiere CEP 面板**:已成熟,在 `premiere-panel/`。功能:選影片→跑 pipeline→
   匯入;設定表單(由 `ui_settings.py` dump 自動生成,加欄位面板自動長出);
-  剪輯後工具(開報告 / 重算剪輯匯入新序列 / QE 掛人聲處理 / 依序列版面產字幕)。
-  待做:自動抓目前選取素材路徑、進度條。面板刻意做薄,
-  真正邏輯全在 Python,日後要換 UXP 影響面小。
+  剪輯後工具(開報告 / 重算剪輯匯入新序列 / QE 掛人聲處理 / 依序列版面產字幕 /
+  清除快取);跑到一半可按停止(taskkill /T 收整棵行程樹);
+  可直接帶入 Premiere 裡選取的素材(`prGetSelectedMedia`)。
+  待做:進度條。面板刻意做薄,真正邏輯全在 Python,日後要換 UXP 影響面小。
 - **FunASR 引擎**:已實作為可選(`transcribe.py`)。對中英夾雜內容不如 Whisper,
   故非預設;純中文內容可切換。
 - 全自動渲染模式(4a):目前只做審閱模式(4b)。要做的話新增 render.py。
