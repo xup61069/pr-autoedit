@@ -23,7 +23,31 @@ def _fmt_value(v) -> str:
                  or "/" in str(x) else str(x) for x in v]
         s = "、".join(parts)
         return s if len(s) <= 60 else s[:60] + "…"
+    # 字典(教學類型詞庫)只報「有哪幾類」。整份印出來是上千個字元,
+    # 會把整張設定摘要表撐爆,而且看的人也讀不出重點。
+    if isinstance(v, dict):
+        if not v:
+            return "(空)"
+        s = "、".join(str(k) for k in v)
+        return (s if len(s) <= 60 else s[:60] + "…") + f"(共 {len(v)} 類)"
     return str(v)
+
+
+def _vocab_changed_note() -> str:
+    """教學類型詞庫改了哪幾類。
+
+    設定摘要只說「詞庫有改」沒有用 —— 過兩天回頭看報告,你想知道的是
+    「那次到底動了哪一類」。所以這裡明確列出跟內建不一樣的類型名稱。"""
+    cur = getattr(cfg, "VOCAB_PRESETS", {}) or {}
+    base = cfg.DEFAULTS.get("VOCAB_PRESETS", {}) or {}
+    added = [k for k in cur if k not in base]
+    edited = [k for k in cur if k in base and cur[k] != base[k]]
+    bits = []
+    if edited:
+        bits.append("改過:" + "、".join(edited))
+    if added:
+        bits.append("自訂類型:" + "、".join(added))
+    return ";".join(bits) or "與內建相同"
 
 
 def _settings_summary() -> str:
@@ -37,15 +61,22 @@ def _settings_summary() -> str:
         return ('<div class="summary">本次全部使用內建預設值,沒有任何自訂設定。</div>')
 
     try:
-        from ui_settings import FIELDS
+        from ui_settings import FIELDS, EXTRA_LABELS
         labels = {f["key"]: f["label"] for f in FIELDS}
+        labels.update(EXTRA_LABELS)
     except Exception:
         labels = {}
 
+    def cells(k):
+        # 詞庫是字典,兩欄各印一份等於印兩千字。改成直接說「改了哪幾類」。
+        if k == "VOCAB_PRESETS":
+            return (f"<td><b>{html.escape(_vocab_changed_note())}</b></td>"
+                    f"<td>內建詞庫</td>")
+        return (f"<td><b>{html.escape(_fmt_value(getattr(cfg, k, None)))}</b></td>"
+                f"<td>{html.escape(_fmt_value(cfg.DEFAULTS.get(k)))}</td>")
+
     rows = "".join(
-        f"<tr><td>{html.escape(labels.get(k, k))}</td>"
-        f"<td><b>{html.escape(_fmt_value(getattr(cfg, k, None)))}</b></td>"
-        f"<td>{html.escape(_fmt_value(cfg.DEFAULTS.get(k)))}</td></tr>"
+        f"<tr><td>{html.escape(labels.get(k, k))}</td>{cells(k)}</tr>"
         for k in changed)
     return f"""
 <h2 style="font-size:1.1rem;font-weight:500">本次設定摘要</h2>
@@ -137,6 +168,28 @@ def generate(timeline: Timeline, words: list[Word],
   <tr><th>原始影片位置</th><th>長度</th></tr>
   {music_rows}
 </table>""" if music_segs else ""
+
+    # 短促雜音(咳嗽、清喉嚨、滑鼠喀一聲)。這些是「有聲音但沒有詞」而且很短的
+    # 段落,已經直接剪掉。單獨列出來的理由:它剪掉的是真的有聲音的地方,
+    # 萬一把小聲的示範音效誤判成咳嗽,只有這張表看得出來。
+    noise_segs = [s for s in timeline.segments if s.reason == "noise"]
+    noise_frames = sum(s.duration for s in noise_segs)
+    noise_rows = "".join(
+        f"<tr><td class='tc'>{tc(s.start)} ~ {tc(s.end)}</td>"
+        f"<td>{s.duration / fps:.1f} 秒</td></tr>"
+        for s in noise_segs)
+    noise_html = f"""
+<h2 style="font-size:1.1rem;font-weight:500">短促雜音(咳嗽/清喉嚨/滑鼠聲,已剪掉)</h2>
+<div class="summary">
+  下面 {len(noise_segs)} 段沒有講話、但有聲響,而且短到不可能是示範音樂
+  (少於「音樂最短長度」),已經直接剪掉,共 {noise_frames / fps:.1f} 秒。
+  時間碼是<b>原始影片</b>的位置。誤剪了小聲的示範音效?把「音樂最短長度」調小,
+  或在進階設定關掉「剪掉短促雜音」。
+</div>
+<table>
+  <tr><th>原始影片位置</th><th>長度</th></tr>
+  {noise_rows}
+</table>""" if noise_segs else ""
 
     # 沒講話但畫面在動的段落(示範操作)。這些原本會被當停頓剪掉,
     # 現在改成加速保留;時間碼是原始影片位置,方便對照確認抓得準不準。
@@ -234,6 +287,7 @@ def generate(timeline: Timeline, words: list[Word],
   <div class="stat"><div class="num">{tc(orig_frames)} → {tc(edited_frames)}</div><div class="lbl">{"原長 → 套用建議後" if live else "原長 → 剪後"}</div></div>
   <div class="stat"><div class="num">{n_del} / {n_spd}</div><div class="lbl">刪除段 / 快轉段</div></div>
   <div class="stat"><div class="num">{len(music_segs)}</div><div class="lbl">音樂/音效段(共 {tc(music_frames)},已保護)</div></div>
+  <div class="stat"><div class="num">{len(noise_segs)}</div><div class="lbl">短促雜音(共 {tc(noise_frames)},已剪掉)</div></div>
   <div class="stat"><div class="num">{len(motion_segs)}</div><div class="lbl">畫面在動改加速(共 {tc(motion_frames)})</div></div>
   <div class="stat"><div class="num">{n_review}</div><div class="lbl">需人工審閱的切點</div></div>
 </div>
@@ -247,6 +301,7 @@ def generate(timeline: Timeline, words: list[Word],
   {''.join(rows)}
 </table>
 {music_html}
+{noise_html}
 {motion_html}
 {_settings_summary()}
 </body></html>"""

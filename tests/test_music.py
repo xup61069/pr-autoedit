@@ -38,6 +38,73 @@ def test_music_gap_protected():
     print("  ✓ 空隙中的音樂段被保護,前後靜音照常處理")
 
 
+def test_cough_is_cut_not_protected():
+    """咳嗽 = 沒有詞、又短的聲響 -> 剪掉,不能當成示範音樂保護。
+
+    為什麼會被誤保護:咳嗽幾乎都緊接在講完一句話之後(先講完才咳),
+    離前面的說話不到 MERGE_GAP_SEC,能量偵測會把咳嗽跟那段講話縫成
+    同一個有聲區間;縫完長度當然超過 MUSIC_MIN_SEC,於是咳嗽跟著被保護、
+    不管停頓剪得多兇都剪不掉。所以判斷長度時要看「落在這個停頓裡的部分」,
+    不能看能量偵測給的整個區間 —— 這個測試就是釘住這件事。"""
+    words = [Word("講完一句", 0.0, 1.0), Word("繼續講", 9.0, 10.0)]
+    fps = 30
+    # 有聲區間 0~39 幀,含著講話(0~30)+ 緊接的咳嗽(30~39)。
+    # 整個區間 1.3 秒 > MUSIC_MIN_SEC,但落在停頓裡的只有 9 幀 = 0.3 秒,
+    # 短於 MUSIC_MIN_SEC(本檔頂端設 0.4)-> 判為雜音。
+    segs = build_segments(words, fps, total_frames=300, audible=[(0, 39)])
+    noise = [s for s in segs if s.reason == "noise"]
+    assert len(noise) == 1, f"應該有一段被判為雜音,實際 {[s.reason for s in segs]}"
+    assert noise[0].action == "delete", "雜音要剪掉,不是保留"
+    assert not any(s.reason == "music" for s in segs), "不該被當成音樂保護"
+    print("  ✓ 緊接在講話後的咳嗽被剪掉(不再誤判為示範音樂)")
+
+
+def test_real_music_still_protected():
+    """改成會剪雜音之後,夠長的示範音樂仍然要原封不動保住。
+
+    這是上一個測試的反面。只驗「咳嗽剪掉了」而不驗這個,
+    等於用破壞音樂保護的方式換到剪咳嗽——那是把核心功能弄壞了。"""
+    words = [Word("聽這段", 0.0, 1.0), Word("如何", 12.0, 13.0)]
+    fps = 30
+    segs = build_segments(words, fps, total_frames=400, audible=[(60, 300)])
+    music = [s for s in segs if s.reason == "music"]
+    assert len(music) == 1 and music[0].action == "keep", "示範音樂被剪掉了"
+    assert music[0].start == 60 and music[0].end == 300
+    assert not any(s.reason == "noise" for s in segs)
+    print("  ✓ 夠長的示範音樂仍然完整保護")
+
+
+def test_noise_trim_off_restores_old_behaviour():
+    """關掉「剪掉短促雜音」要回到舊行為(短聲響照樣當音樂保護)。
+    使用者關掉一個開關,就該真的關掉,不能還留著一半。"""
+    words = [Word("講完一句", 0.0, 1.0), Word("繼續講", 9.0, 10.0)]
+    old = cfg.NOISE_TRIM
+    cfg.NOISE_TRIM = False
+    try:
+        segs = build_segments(words, 30, total_frames=300, audible=[(0, 39)])
+        assert any(s.reason == "music" and s.action == "keep" for s in segs)
+        assert not any(s.reason == "noise" for s in segs)
+    finally:
+        cfg.NOISE_TRIM = old
+    print("  ✓ 關掉雜音剪除後,回到「短聲響也當音樂保護」的舊行為")
+
+
+def test_noise_keeps_full_coverage():
+    """剪掉雜音之後,段落仍要首尾相連、完整覆蓋整支影片。
+    這個專案的 bug 幾乎都是時間軸破洞,任何新增的段落型別都要驗這件事。"""
+    words = [Word("測試", 0.0, 1.0), Word("結束", 14.0, 15.0)]
+    fps = 30
+    # 咳嗽(30~51)+ 音樂(180~330)混在同一個空隙裡
+    segs = build_segments(words, fps, total_frames=450,
+                          audible=[(0, 39), (180, 330)])
+    assert segs[0].start == 0 and segs[-1].end == 450
+    for a, b in zip(segs, segs[1:]):
+        assert a.end == b.start, f"時間軸破洞:{a.end} != {b.start}"
+    assert any(s.reason == "noise" for s in segs)
+    assert any(s.reason == "music" for s in segs)
+    print("  ✓ 咳嗽與音樂混在同一空隙時,覆蓋仍完整無斷裂")
+
+
 def test_no_audible_same_as_before():
     """沒偵測到聲音時,行為應與原本完全相同(整段快轉)"""
     words = [Word("第一句", 0.0, 1.0), Word("第二句", 4.0, 5.0)]
@@ -256,6 +323,10 @@ if __name__ == "__main__":
     test_probe_constant_bgm_floor()
     test_quiet_detects_gap_between_speech()
     test_quiet_ignores_short_pause()
+    test_cough_is_cut_not_protected()
+    test_real_music_still_protected()
+    test_noise_trim_off_restores_old_behaviour()
+    test_noise_keeps_full_coverage()
     test_motion_turns_silence_into_speed()
     test_motion_static_stays_deleted()
     test_speed_mode_never_deletes()

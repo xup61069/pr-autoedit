@@ -104,11 +104,27 @@ def build_segments(words: list[Word], fps: float, total_frames: int,
             emit_silence_piece(start_f, end_f)   # 沒有音樂,維持原本行為
             return
         min_silence = round(cfg.SILENCE_THRESHOLD_SEC * fps)
+        min_music = round(cfg.MUSIC_MIN_SEC * fps)
+        noise_trim = getattr(cfg, "NOISE_TRIM", True)
         for a, b, kind in pieces:
             if kind == "music":
-                # 音樂/音效段:保護起來。信心 0.8 = 報告會提醒使用者確認
-                segments.append(Segment(a, b, "keep", reason="music",
-                                        confidence=0.8))
+                # 「有聲音、但沒有任何詞」的一段。是要保護的示範音樂,
+                # 還是咳嗽/清喉嚨/滑鼠喀一聲這種雜音?用長度分:
+                # 示範音樂通常好幾秒(這正是 MUSIC_MIN_SEC 的定義),
+                # 停頓裡只響了零點幾秒的,不會是你要放給觀眾聽的東西。
+                #
+                # 長度一定要看「落在這個停頓裡的部分」,不能看能量偵測給的
+                # 整個有聲區間:咳嗽通常緊接在講完一句話之後,離前面的說話
+                # 不到 MERGE_GAP_SEC,會被縫進同一個有聲區間;那個區間含著
+                # 整段講話,當然超過 MUSIC_MIN_SEC,於是咳嗽就跟著被當成
+                # 音樂保護起來、永遠剪不掉。
+                if noise_trim and (b - a) < min_music:
+                    segments.append(Segment(a, b, "delete", reason="noise",
+                                            confidence=0.85))
+                else:
+                    # 音樂/音效段:保護起來。信心 0.8 = 報告會提醒使用者確認
+                    segments.append(Segment(a, b, "keep", reason="music",
+                                            confidence=0.8))
             elif b - a >= min_silence:
                 emit_silence_piece(a, b)
             else:

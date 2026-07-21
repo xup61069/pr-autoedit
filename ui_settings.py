@@ -93,6 +93,10 @@ FIELDS = [
     {"key": "MUSIC_DETECT", "label": "音樂/音效保護", "type": "bool",
      "tier": "common", "group": "剪輯",
      "hint": "保護無語音但有聲音的段落(示範音樂、音效),避免被當停頓剪掉"},
+    {"key": "NOISE_TRIM", "label": "剪掉短促雜音", "type": "bool",
+     "tier": "common", "group": "剪輯", "show_if": {"MUSIC_DETECT": [True]},
+     "hint": "建議開啟。咳嗽、清喉嚨、滑鼠喀一聲這種「有聲音但沒講話」又很短的"
+             "段落直接剪掉;夠長的才當示範音樂保護。講話中途咳的剪不掉"},
     # 註:「無語音時依畫面判定」以前是這裡的一個獨立勾選,現在併進上面的
     # 「停頓處理方式 = auto」。兩個設定並存時會互相蓋掉(選了快轉,畫面靜止的
     # 停頓還是被剪掉),而且報告看不出來,所以做成三選一。
@@ -287,6 +291,10 @@ def _all_presets() -> tuple[dict, list]:
 # 放這裡是安全的:面板存檔時只收「表單控制項」上的值(見 main.js 的
 # collectValues),所以這些鍵不會被反寫進 settings_local.json 釘死。
 PANEL_EXTRA_KEYS = ["PREMIERE_VOICE_FX", "DENOISE_PER_CLIP_MAX"]
+
+# 有標題的設定,報告的「本次設定」表才印得出人看得懂的名字。
+# 詞庫不是表單欄位(它有自己的編輯器),但改了要看得出來,所以補一個標題。
+EXTRA_LABELS = {"VOCAB_PRESETS": "教學類型詞庫"}
 
 
 def _vocab_budget() -> dict:
