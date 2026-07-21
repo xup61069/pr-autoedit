@@ -297,6 +297,55 @@ def test_motion_never_touches_music():
     print("  ✓ 音樂段與語音段不受影響")
 
 
+def test_micro_trim_segments_can_be_rescued_by_motion():
+    """微剪挖出來的停頓,夠長又剛好畫面在動時會被翻回快轉。
+
+    這件事本身是對的(你講到一半停 0.6 秒去拉推桿,那半秒的畫面有內容),
+    但它有兩個後果必須釘住:
+      1. 短於 MOTION_MIN_SEC 的微剪段永遠維持刪除 —— 那是擋住
+         「Premiere 產生大量細碎變速片段」這個效能地雷的閘門;
+      2. 所以「能量微剪剪掉幾分鐘」這個數字,在畫面判定跑完之前是虛報的。
+    trim_quiet_inside 的註解以前寫「一律刪除、不做快轉」,跟實際行為相反,
+    害下一個看這段程式的人會相信錯的前提。"""
+    from core.decision import trim_quiet_inside, apply_motion
+    from core.models import Segment
+    cfg.MOTION_MIN_SEC = 0.5
+    cfg.SILENCE_SPEED_FACTOR = 6.0
+    fps = 30.0
+    # 一整段講話(0~300),中間挖出兩個安靜區:一個 0.9 秒、一個 0.3 秒
+    segs = [Segment(0, 300, "keep")]
+    segs = trim_quiet_inside(segs, [(60, 87), (150, 159)], fps)
+    cut = [s for s in segs if s.action == "delete"]
+    assert len(cut) == 2 and all(s.reason == "silence" for s in cut), \
+        f"微剪這一步應該全部標成刪除,實際 {[(s.start, s.action) for s in segs]}"
+
+    # 畫面全程在動
+    out = apply_motion(segs, [(0, 300)], fps)
+    long_seg = [s for s in out if s.start == 60][0]
+    short_seg = [s for s in out if s.start == 150][0]
+    assert long_seg.action == "speed" and long_seg.reason == "silence_motion", \
+        "夠長又有畫面活動的微剪段應該被救回來變快轉"
+    assert short_seg.action == "delete", \
+        "短於 MOTION_MIN_SEC 的微剪段必須維持刪除(細碎變速是效能地雷)"
+    print("  ✓ 微剪段:夠長的會被畫面判定救回快轉,太短的維持刪除")
+
+
+def test_micro_trim_number_is_reported_after_motion():
+    """「能量微剪剪掉幾分」要等畫面判定跑完才印,而且要說有多少被救回來。
+
+    使用者是拿這個數字判斷「微剪值不值得開」的。在畫面判定之前印,
+    報出來的比實際剪掉的多,等於給了他一個錯的依據。"""
+    import pipeline, inspect
+    src = inspect.getsource(pipeline.main)
+    micro_at = src.index("micro_trimmed = before_keep")
+    motion_at = src.index("segments = apply_motion")
+    print_at = src.index("能量微剪:剪掉")
+    assert micro_at < motion_at < print_at, \
+        "微剪的統計必須在 apply_motion 之後才印,否則數字是虛報的"
+    assert "kept_by_motion" in src, "要說明有多少微剪段被畫面判定救回快轉"
+    print("  ✓ 微剪的省時數字在畫面判定之後才算,且會說明救回多少")
+
+
 def test_motion_failure_and_emptiness_are_announced():
     """畫面偵測「失敗」與「一段活動都沒有」都必須講出來。
 
@@ -371,6 +420,8 @@ if __name__ == "__main__":
     test_auto_mode_only_scans_motion_when_needed()
     test_motion_ignores_short_segments()
     test_motion_never_touches_music()
+    test_micro_trim_segments_can_be_rescued_by_motion()
+    test_micro_trim_number_is_reported_after_motion()
     test_motion_failure_and_emptiness_are_announced()
     test_motion_probe_error_is_readable()
     test_motion_regions_from_diffs()

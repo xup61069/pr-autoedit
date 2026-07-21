@@ -225,6 +225,7 @@ def main():
             print(f"  重講偵測:砍掉 {len(retakes)} 處說錯重來,共 {secs:.1f} 秒"
                   f"(信心低,全部會下 marker,請看報告確認)")
 
+    micro_trimmed = None
     if quiet:
         from core.decision import trim_quiet_inside, protect_words
         # 別把整個詞吃掉:輕聲短字(你、它、的)音量低,整個掉在門檻下面時
@@ -234,9 +235,9 @@ def main():
         before_keep = sum(s.duration for s in segments if s.action == "keep")
         segments = trim_quiet_inside(segments, quiet, fps)
         after_keep = sum(s.duration for s in segments if s.action == "keep")
-        saved = (before_keep - after_keep) / fps
-        print(f"  能量微剪:再剪掉 {saved / 60:.1f} 分"
-              f"(講話段裡面沒聲音的小停頓)")
+        # 先記著,等畫面判定跑完再印。畫面判定可能把其中一部分改回快轉
+        # (見下面),那時候這個數字就不是「剪掉」多少了。
+        micro_trimmed = before_keep - after_keep
 
     if motion:
         from core.decision import apply_motion
@@ -254,6 +255,24 @@ def main():
               "所以這次的停頓全部用快轉帶過、沒有剪掉任何一段。\n"
               "    這才是你要的就不用理它;想把靜止的停頓剪掉,"
               "把進階設定的「畫面活動靈敏度」調小再按重算剪輯。")
+
+    # 微剪的數字要等畫面判定跑完才算得準。
+    #
+    # 微剪挖出來的安靜區是 delete + reason="silence",而畫面判定只看
+    # reason 和長度 —— 所以任何長度超過 MOTION_MIN_SEC(0.5 秒)的微剪段,
+    # 只要當下畫面在動,就會被翻回 speed。教學片講到一半停 0.6 秒拉推桿
+    # 正是這種情況,一點都不罕見。在畫面判定之前印,報出來的「剪掉多少」
+    # 會比實際多,而那個數字正是使用者判斷「微剪值不值得開」的依據。
+    if micro_trimmed is not None:
+        still_cut = sum(s.duration for s in segments
+                        if s.action == "delete" and s.reason == "silence")
+        kept_by_motion = max(0, micro_trimmed - still_cut)
+        msg = f"  能量微剪:剪掉 {micro_trimmed / fps / 60:.1f} 分" \
+              "(講話段裡面沒聲音的小停頓)"
+        if kept_by_motion > 0:
+            msg += (f",其中 {kept_by_motion / fps / 60:.1f} 分因為畫面在動"
+                    "改成快轉保留下來")
+        print(msg)
 
     n_del = sum(1 for s in segments if s.action == "delete")
     n_spd = sum(1 for s in segments if s.action == "speed")
