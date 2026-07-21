@@ -297,6 +297,75 @@ def test_motion_never_touches_music():
     print("  ✓ 音樂段與語音段不受影響")
 
 
+def test_float32_gives_identical_detection():
+    """省記憶體的那個改動,不准改到偵測結果。
+
+    音檔改用 float32 讀(soundfile 預設是 float64)是為了長片的記憶體:
+    34 分鐘的單聲道 48k,float64 要 783MB、float32 只要 392MB,而且以前
+    音樂偵測與微剪各讀一次同一個檔,等於讀兩遍。
+
+    但「記憶體降了多少」是我在優化的數字,真正該驗的是「剪輯結果有沒有變」
+    ——精度變低若讓某一段音樂掉到門檻下面,那段音樂就會被剪掉,
+    而這種事在報告上看不出來、只有播出去才發現。
+    所以這個測試直接比對兩種精度算出來的區間必須完全相同。"""
+    sr, fps = 48000, 30.0
+    rng = np.random.default_rng(7)
+
+    # 做一段像真實教學片的音訊:講話、停頓、示範音樂、咳嗽、底噪
+    parts, t = [], 0.0
+    while t < 60.0:
+        kind = rng.choice(["speech", "pause", "music", "cough"],
+                          p=[.55, .3, .1, .05])
+        dur = {"speech": rng.uniform(1, 4), "pause": rng.uniform(0.3, 2.5),
+               "music": rng.uniform(2, 6), "cough": rng.uniform(0.1, 0.3)}[kind]
+        n = int(dur * sr)
+        sig = rng.standard_normal(n) * 3e-4                      # 底噪
+        if kind == "speech":
+            sig = sig + 0.18 * np.sin(2 * np.pi * rng.uniform(90, 200)
+                                      * np.arange(n) / sr) * (0.6 + 0.4 * rng.random(n))
+        elif kind == "music":
+            sig = sig + 0.12 * np.sin(2 * np.pi * 440 * np.arange(n) / sr)
+        elif kind == "cough":
+            sig = sig + 0.3 * rng.standard_normal(n)
+        parts.append(sig)
+        t += dur
+    audio = np.concatenate(parts)
+
+    a64 = audio.astype(np.float64)
+    a32 = audio.astype(np.float32)
+    for label, fn in (("音樂/有聲區間", audible_regions_from_array),
+                      ("微剪安靜區間", quiet_regions_from_array)):
+        r64, r32 = fn(a64, sr, fps), fn(a32, sr, fps)
+        assert r64 == r32, (
+            f"{label}在 float32 下算出來不一樣:"
+            f"float64 有 {len(r64)} 段、float32 有 {len(r32)} 段。"
+            "省記憶體不能改到剪輯結果。")
+    print("  ✓ float32 與 float64 算出完全相同的偵測結果")
+
+
+def test_probe_reads_audio_once_as_float32():
+    """長片的記憶體:音檔要用 float32 讀,而且只讀一次分給兩個偵測。
+
+    以前音樂偵測與微剪各自 sf.read 一次同一個檔,預設又是 float64 ——
+    一個半小時的片光這兩次就是 4GB,而且 Whisper 剛跑完、記憶體正吃緊。"""
+    import inspect, pipeline
+    from modules.audio_probe import read_audio, _window_db
+    assert 'dtype="float32"' in inspect.getsource(read_audio), \
+        "read_audio 要指定 float32,不然吃預設的 float64"
+    # _window_db 不可以再把整個陣列轉成 float64(那等於白省)。
+    # 只看「程式碼」不看註解——註解裡本來就會提到以前的寫法當對照。
+    src = "\n".join(ln.split("#")[0]
+                    for ln in inspect.getsource(_window_db).splitlines())
+    assert ".astype(np.float64)" not in src, \
+        "_window_db 不該複製出 float64 的整份陣列,要用 np.mean(dtype=) 累加"
+    assert "dtype=np.float64" in src, "累加仍然要用 float64,不然精度會掉"
+    # pipeline 只能讀一次
+    main_src = inspect.getsource(pipeline.main)
+    assert main_src.count("read_audio(") == 1, \
+        "pipeline 應該只讀一次音檔,再把陣列分給兩個偵測"
+    print("  ✓ 音檔用 float32 讀、整支管線只讀一次")
+
+
 def test_micro_trim_segments_can_be_rescued_by_motion():
     """微剪挖出來的停頓,夠長又剛好畫面在動時會被翻回快轉。
 
@@ -420,6 +489,8 @@ if __name__ == "__main__":
     test_auto_mode_only_scans_motion_when_needed()
     test_motion_ignores_short_segments()
     test_motion_never_touches_music()
+    test_float32_gives_identical_detection()
+    test_probe_reads_audio_once_as_float32()
     test_micro_trim_segments_can_be_rescued_by_motion()
     test_micro_trim_number_is_reported_after_motion()
     test_motion_failure_and_emptiness_are_announced()

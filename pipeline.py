@@ -174,15 +174,22 @@ def main():
     #   quiet   = 沒聲音的地方 -> 拿來「剪掉」講話段裡面的小停頓
     probe_wav = raw_wav if os.path.exists(raw_wav) else clean_wav
     has_probe = os.path.exists(probe_wav)
-    audible = []
-    if cfg.MUSIC_DETECT and has_probe:
-        from modules.audio_probe import detect_audible_regions
-        audible = detect_audible_regions(probe_wav, fps)
+    want_audible = cfg.MUSIC_DETECT and has_probe
+    want_quiet = getattr(cfg, "MICRO_TRIM", False) and has_probe
 
-    quiet = []
-    if getattr(cfg, "MICRO_TRIM", False) and has_probe:
-        from modules.audio_probe import detect_quiet_regions
-        quiet = detect_quiet_regions(probe_wav, fps)
+    audible, quiet = [], []
+    if want_audible or want_quiet:
+        # 音檔只讀一次分給兩個偵測。以前兩個入口各自 sf.read 一次同一個檔,
+        # 等於整支影片的音訊被完整讀進記憶體兩遍——長片上這是最貴的一筆
+        # (一個半小時的片,光是多讀那一次就是 1GB 和好幾秒)。
+        from modules.audio_probe import (read_audio, audible_regions_from_array,
+                                         quiet_regions_from_array)
+        probe_audio, probe_sr = read_audio(probe_wav)
+        if want_audible:
+            audible = audible_regions_from_array(probe_audio, probe_sr, fps)
+        if want_quiet:
+            quiet = quiet_regions_from_array(probe_audio, probe_sr, fps)
+        del probe_audio      # 後面還要混音、產 XML,不必一路佔著這塊記憶體
 
     # 畫面活動:沒講話的段落,靠畫面決定要加速(有在示範)還是剪掉(純空檔)。
     # 用「原始影片」而不是混音後的檔——混音後的檔這時還沒產生。

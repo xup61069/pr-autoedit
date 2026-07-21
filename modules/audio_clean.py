@@ -338,7 +338,10 @@ def gate_speed_audio(in_wav: str, out_wav: str, segments, fps: float) -> str:
     原理:在 Premiere 裡快轉播放時,若那段本來就無聲,加速後仍是無聲,
     就不會有加速造成的尖聲(花栗鼠音)。回傳處理後的 WAV 路徑。"""
     import soundfile as sf
-    audio, sr = sf.read(in_wav)
+    # float32 而不是預設的 float64:整支影片的音訊會一次讀進記憶體,
+    # 34 分鐘的片這一項就差 390MB。抹靜音只是把樣本設成 0,不做運算,
+    # 而寫出去仍然是 16-bit PCM——已實測兩者寫出的檔案位元組完全相同。
+    audio, sr = sf.read(in_wav, dtype="float32")
     n = len(audio)
     muted = 0
     for s in segments:
