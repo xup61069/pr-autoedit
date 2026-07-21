@@ -86,7 +86,10 @@ def extract_audio(source, out_wav: str) -> str:
     """從影片抽出音軌成 WAV(48kHz 單聲道,適合後續處理)。
 
     source 是 modules.sources.VideoSource:可能是一個檔,也可能是好幾個檔
-    要接成一支。input_args() 會給出對應的 ffmpeg 輸入參數,這裡不必分辨。"""
+    要接成一支。input_args() 會給出對應的 ffmpeg 輸入參數,這裡不必分辨。
+    直接給一個路徑字串也可以(見 sources.coerce 的說明)。"""
+    from modules.sources import coerce
+    source = coerce(source)
     subprocess.run([
         "ffmpeg", "-y", *source.input_args(),
         "-vn", "-ac", "1", "-ar", "48000",
@@ -256,7 +259,10 @@ def mux_back(source, clean_wav: str, out_mp4: str) -> str:
 
     source 給多個檔時,接合就發生在這一步 —— 不會先產生一份合併後的大檔。
     4K 長片一份就十幾 GB,那份中繼檔用完即丟,純粹浪費硬碟跟時間;
-    這裡寫出來的 01_clean_av.mp4 本來就是完整的一支。"""
+    這裡寫出來的 01_clean_av.mp4 本來就是完整的一支。
+    直接給一個路徑字串也可以(見 sources.coerce 的說明)。"""
+    from modules.sources import coerce
+    source = coerce(source)
     picked = _writable_target(out_mp4)
     if picked != out_mp4:
         print(f"  ({os.path.basename(out_mp4)} 正被 Premiere 使用中,"
@@ -312,7 +318,11 @@ def clean_audio(source, work_dir: str) -> str:
     """清理音訊:抽音軌 →(降噪)→(響度標準化)。回傳乾淨的 WAV 路徑。
 
     注意:這一步『不』混回影片。混音留到決策引擎算完靜音段之後,
-    才能一併把快轉段的聲音抹掉(見 gate_speed_audio 與 pipeline)。"""
+    才能一併把快轉段的聲音抹掉(見 gate_speed_audio 與 pipeline)。
+
+    source 可以是 VideoSource,也可以直接給路徑字串。"""
+    from modules.sources import coerce
+    source = coerce(source)
     raw_wav = wpath(work_dir, "01_raw.wav")
     clean_wav = wpath(work_dir, "01_clean.wav")
     norm_wav = wpath(work_dir, "01_clean_norm.wav")

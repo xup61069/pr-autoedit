@@ -427,6 +427,47 @@ def test_merge_sources():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_source_accepts_a_plain_path():
+    """吃影片來源的函式,也要收得下「一個路徑字串」。
+
+    這些函式的參數從路徑字串改成 VideoSource 之後,只要有任何一個呼叫端
+    沒跟著改(或程式跑到一半被更新、新舊模組兜在一起),那個物件就會一路
+    被塞進 ffmpeg 的參數清單,最後在 subprocess 深處炸出
+        TypeError: expected str, bytes or os.PathLike object, not VideoSource
+    ——對使用者完全沒有意義,而且那時候語音辨識已經跑完好幾分鐘了。
+    實際發生過。兩邊都收就沒有這個破口。"""
+    import inspect
+    from modules import sources, audio_clean, video_probe
+
+    one = sources.coerce("C:\\v\\a.mp4")
+    assert one.paths == ["C:\\v\\a.mp4"] and not one.multi
+    assert one.input_args() == ["-i", "C:\\v\\a.mp4"]
+
+    many = sources.coerce(["C:\\v\\a.mp4", "C:\\v\\b.mp4"])
+    assert many.multi and len(many.paths) == 2
+
+    # 本來就是 VideoSource 的話原樣回傳(不要多包一層)
+    vs = sources.VideoSource(["C:\\v\\a.mp4"])
+    assert sources.coerce(vs) is vs
+
+    # 真的傳了看不懂的東西,要在這裡當場講清楚,不是等 subprocess 才爆
+    try:
+        sources.coerce(12345)
+    except TypeError as e:
+        assert "VideoSource" in str(e) and "int" in str(e), str(e)
+    else:
+        raise AssertionError("傳數字進去居然沒有報錯")
+
+    # 每個吃來源的入口都要先 coerce 一次
+    for fn in (audio_clean.extract_audio, audio_clean.mux_back,
+               audio_clean.clean_audio, video_probe._sample_frames,
+               video_probe.frame_diffs):
+        src_txt = inspect.getsource(fn)
+        assert "coerce(source)" in src_txt, \
+            f"{fn.__name__} 沒有先 coerce,傳到路徑字串就會在 ffmpeg 深處爆掉"
+    print("  ✓ 影片來源給路徑字串或 VideoSource 都收得下")
+
+
 def test_merge_rejects_mismatched_specs():
     """規格不一樣的檔要當場擋下來,而且要說清楚哪裡不一樣。
 
@@ -664,6 +705,7 @@ if __name__ == "__main__":
     test_every_setting_is_reachable_or_explained()
     test_panel_dump_is_valid()
     test_merge_sources()
+    test_source_accepts_a_plain_path()
     test_merge_rejects_mismatched_specs()
     test_report_stays_usable_on_a_long_video()
     test_short_report_is_not_truncated()

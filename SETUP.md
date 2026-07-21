@@ -83,10 +83,11 @@ node tests/test_panel_voicefx.js
 node tests/test_panel_vocab.js
 node tests/test_panel_stop.js
 node tests/test_panel_merge.js
+node tests/test_panel_errors.js
 ```
-十套都顯示「全部通過」就代表核心沒問題。前六套是 Python,後四套是面板的
+十一套都顯示「全部通過」就代表核心沒問題。前六套是 Python,後五套是面板的
 邏輯(用假的 Premiere 環境跑,不必真的開 Premiere;需要有 Node.js,
-沒裝的話跳過那三套也沒關係)。
+沒裝的話跳過那五套也沒關係)。
 
 > 這幾套都不需要 GPU、ffmpeg 或影片,幾秒就跑完。
 

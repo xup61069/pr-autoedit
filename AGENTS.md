@@ -105,18 +105,25 @@ node tests/test_panel_voicefx.js  # 動了 host.jsx 的掛效果邏輯或 PREMIE
 node tests/test_panel_vocab.js    # 動了提示詞長度估算或教學類型編輯器
 node tests/test_panel_stop.js     # 動了停止鈕或子行程的收尾邏輯
 node tests/test_panel_merge.js    # 動了多檔合併、輸出資料夾命名或檔案排序
+node tests/test_panel_errors.js   # 動了 ERROR_TABLE 或錯誤訊息的解讀
 ```
 
-⚠️ **十套全部都要跑,而且不要接管線。**`python -m tests.xxx | tail` 的離開碼
+⚠️ **十一套全部都要跑,而且不要接管線。**`python -m tests.xxx | tail` 的離開碼
 是 `tail` 的,失敗的測試會被靜靜吃掉。這份清單以前只列六套,漏的正好是
 `test_music` —— 守著畫面判定與雜音剪除的那一套,結果 live 模式的標籤 bug
 在「測試全綠」的狀態下活了很久。
 
-⚠️ **九套全綠不等於沒問題。**這個專案已經被同一種盲點咬過三次:測試餵進去的
+⚠️ **全綠不等於沒問題。**這個專案已經被同一種盲點咬過好幾次:測試餵進去的
 假資料剛好只涵蓋「開發當時想到的那一種」。畫面判定的測試全部寫死
 `action="delete"`(使用者實際在用的 speed 從沒被測過);活專案的假資料只有
-四種段落(後來新增的 silence_motion / noise 就這樣掉進「當成語音」)。
+四種段落(後來新增的 silence_motion / noise 就這樣掉進「當成語音」);
+錯誤翻譯表拿「整份 log」比對,結果把成功訊息裡的 VST 字樣當成失敗原因。
 加測試時先問:**這個功能的輸入,實際上還有哪幾種形狀?**
+
+⚠️ **改了函式的參數型別,要讓舊的呼叫方式也還收得下。**影片來源從「路徑
+字串」改成 `VideoSource` 時,漏改的呼叫端會把物件一路塞進 ffmpeg 的參數
+清單,最後在 subprocess 深處炸出看不懂的 TypeError——而那時候語音辨識
+已經跑完好幾分鐘。`sources.coerce()` 就是為此存在的。
 
 `test_panel_voicefx.js` 用一個假的 Premiere 跑 `host.jsx`,所以中文版介面、
 上千個片段、效果不存在這幾種情況不必真的開 Premiere 就測得到

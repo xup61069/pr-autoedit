@@ -210,6 +210,29 @@ class VideoSource:
         return f"{len(self.paths)} 個檔接成一支({mins:.1f} 分):{names}"
 
 
+def coerce(source) -> VideoSource:
+    """把「一個路徑字串」也當成合法的來源。
+
+    為什麼要這麼寬容:這些函式的參數從「路徑字串」改成 VideoSource 之後,
+    只要有任何一個呼叫端沒跟著改(或執行到一半程式被更新、模組載入的
+    新舊版本兜在一起),那個字串/物件就會一路被塞進 ffmpeg 的參數清單裡,
+    最後在 subprocess 深處炸出一句
+        TypeError: expected str, bytes or os.PathLike object, not VideoSource
+    ——對使用者完全沒有意義,而且那時候辨識已經跑完好幾分鐘了。
+
+    兩邊都收就沒有這個破口。真的傳了看不懂的東西,也在這裡當場講清楚,
+    而不是等到 subprocess 才爆。"""
+    if isinstance(source, VideoSource):
+        return source
+    if isinstance(source, str):
+        return VideoSource([source])
+    if isinstance(source, (list, tuple)) and all(
+            isinstance(p, str) for p in source):
+        return VideoSource(list(source))
+    raise TypeError(
+        f"影片來源必須是路徑或 VideoSource,拿到的是 {type(source).__name__}")
+
+
 def from_args(paths: list[str], list_dir: str | None = None,
               sort: bool = True) -> VideoSource:
     """從命令列參數建立來源。

@@ -202,7 +202,9 @@
       msg: "顯示卡跑不動這個運算精度。\n" +
            "  → ⚙ 設定 > 進階設定 > 辨識效能 > 「辨識運算精度」\n" +
            "     改成 int8_float16,再跑一次" },
-    { re: /scan failure|Unable to load plugin|VST/i,
+    // 「VST」這個字在正常訊息裡也會出現(「載入 1 個 VST 外掛並處理...」),
+    // 所以規則要綁在「失敗」的字眼上,不能只看到 VST 就認領
+    { re: /scan failure|Unable to load plugin|failed to load.*vst|vst.*(load|scan).*fail/i,
       msg: "降噪外掛載入失敗。\n" +
            "  → 檢查「進階設定 > VST 外掛路徑」有沒有指到內層那顆 .vst3\n" +
            "     正確路徑長這樣(最後還有一層 .vst3):\n" +
@@ -216,10 +218,35 @@
            "  → 確認你選的是有收音的錄影檔" }
   ];
 
+  /*
+   * 只在「出事的那一段」裡找線索,不要拿整份 log 去比對。
+   *
+   * 這是踩過的坑:一次執行的 log 裡有大量「正常」的訊息,而那些訊息裡就
+   * 含著規則要找的關鍵字。實際發生過 —— 混音那一步壞掉,面板卻回答
+   * 「降噪外掛載入失敗,去檢查 VST 路徑」,因為前面第一步印過一行
+   * 「載入 1 個 VST 外掛並處理...」,那是成功的訊息,卻剛好命中 VST 規則。
+   * 使用者於是跑去改一個根本沒壞的設定。
+   *
+   * 給錯答案比不給答案更糟:不給答案他會把訊息貼出來問,給錯答案他會照做,
+   * 然後在錯的方向上耗很久。所以寧可回 null。
+   *
+   * 做法:從最後一個 Traceback(或最後幾行)開始看。Python 的錯誤一定在
+   * 尾巴,前面那些都是已經跑成功的步驟。
+   */
+  function errorTail(text) {
+    var s = String(text || "");
+    var i = s.lastIndexOf("Traceback (most recent call last)");
+    if (i >= 0) return s.slice(i);
+    // 沒有 traceback(例如 sys.exit 印一段話就結束):看最後 25 行就好
+    var lines = s.split(/\r?\n/);
+    return lines.slice(Math.max(0, lines.length - 25)).join("\n");
+  }
+
   // 從這次的訊息裡找出看得懂的解釋;找不到就回 null(照舊顯示原始訊息)
   function explainError(text) {
+    var tail = errorTail(text);
     for (var i = 0; i < ERROR_TABLE.length; i++) {
-      var m = ERROR_TABLE[i].re.exec(text);
+      var m = ERROR_TABLE[i].re.exec(tail);
       if (m) {
         return ERROR_TABLE[i].msg.replace(/\$1/g, m[1] || "");
       }

@@ -34,7 +34,11 @@ def _sample_frames(source, sample_fps: float) -> np.ndarray:
     失敗時丟出帶著 ffmpeg 原始說法的 RuntimeError。以前是直接讓
     subprocess 的 CalledProcessError 冒出去,那個例外的訊息只有
     「returned non-zero exit status 1」加一長串指令 —— 真正的原因被
-    capture_output 收在 stderr 裡沒人看得到,連面板的錯誤翻譯表都對不上。"""
+    capture_output 收在 stderr 裡沒人看得到,連面板的錯誤翻譯表都對不上。
+
+    source 可以是 VideoSource,也可以直接給路徑字串(見 sources.coerce)。"""
+    from modules.sources import coerce
+    source = coerce(source)
     cmd = [
         "ffmpeg", "-v", "error", *source.input_args(),
         "-vf", f"fps={sample_fps},scale={PROBE_W}:{PROBE_H},format=gray",
@@ -68,6 +72,8 @@ def frame_diffs(source, sample_fps: float,
     # 「這是不是同一批影片」。快取以前只記 sample_fps,不記影片本身:
     # 把同一支片重新輸出一份(或多選/少選了一個檔),快取會被當成有效的
     # 沿用,畫面判定就是照舊那批算的——完全沒有徵兆。
+    from modules.sources import coerce
+    source = coerce(source)
     fingerprint = source.fingerprint()
     if cache_json and os.path.exists(cache_json):
         try:
