@@ -4,7 +4,7 @@
 
 ## 開發環境
 
-照 SETUP.md 裝好環境後,改動前先確認測試都通過。**十一套都要跑**:
+照 SETUP.md 裝好環境後,改動前先確認測試都通過。**十二套都要跑**:
 
 ```
 python -m tests.test_decision      # 冗詞、停頓、微剪、重講、設定組合的承諾
@@ -18,6 +18,7 @@ node tests/test_panel_vocab.js     # 教學類型編輯器的額度試算
 node tests/test_panel_stop.js      # 停止鈕:收整棵行程樹、停止不等於失敗
 node tests/test_panel_merge.js     # 多檔合併:命名與排序要跟 Python 算得一樣
 node tests/test_panel_errors.js    # 錯誤翻譯:不准給錯答案
+node tests/test_panel_progress.js  # 進度條:格式要跟 Python 印的一致
 ```
 
 > ⚠️ **驗證指令不要接管線。**`python -m tests.xxx | tail` 的離開碼是 `tail` 的,
@@ -55,7 +56,7 @@ node tests/test_panel_errors.js    # 錯誤翻譯:不准給錯答案
 
 ## 送 PR 前
 
-- 跑過**十一套**測試,全部通過(離開碼要單獨驗,不要接管線)
+- 跑過**十二套**測試,全部通過(離開碼要單獨驗,不要接管線)
 - 若新增了可調參數,把它加進 `ui_settings.py` 的 `FIELDS`(面板會自動長出
   控制項);真的不該做成控制項就加進 `PANEL_OMITTED_KEYS` 並寫明理由。
   兩個都沒做的話 `test_e2e_smoke` 會紅——這是防止「程式在用、面板卻找不到」

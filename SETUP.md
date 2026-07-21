@@ -84,10 +84,11 @@ node tests/test_panel_vocab.js
 node tests/test_panel_stop.js
 node tests/test_panel_merge.js
 node tests/test_panel_errors.js
+node tests/test_panel_progress.js
 ```
-十一套都顯示「全部通過」就代表核心沒問題。前六套是 Python,後五套是面板的
+十二套都顯示「全部通過」就代表核心沒問題。前六套是 Python,後六套是面板的
 邏輯(用假的 Premiere 環境跑,不必真的開 Premiere;需要有 Node.js,
-沒裝的話跳過那五套也沒關係)。
+沒裝的話跳過那六套也沒關係)。
 
 > 這幾套都不需要 GPU、ffmpeg 或影片,幾秒就跑完。
 
@@ -229,7 +230,8 @@ python pipeline.py D:\影片\我的教學_0718.mp4 --skip-audio
 
 ### 想全程不離開 Premiere?(推薦)
 專案內有一個 `premiere-panel\` 資料夾,是 Premiere 面板:選影片、調設定、
-一鍵剪輯、自動匯入,跑到一半可以按停止。剪完還有「開啟審閱報告 /
+一鍵剪輯、自動匯入,跑到一半可以按停止,最花時間的幾步有進度條。
+剪完還有「開啟審閱報告 /
 重算剪輯 / 幫目前序列掛人聲處理 / 用目前序列產生字幕 / 清除快取」五顆按鈕。
 安裝與使用見 `premiere-panel\README.md`。
 

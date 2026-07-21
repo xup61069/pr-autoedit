@@ -199,7 +199,7 @@ pr-autoedit/
 │  ├─ live_subs.py      依 Premiere 剪完的時間軸重新對位字幕
 │  └─ report.py         HTML 審閱報告
 ├─ premiere-panel/      ★ Premiere 面板(見其中的 README)
-├─ tests/               測試 —— 六套 Python + 五套面板邏輯(不必開 Premiere)
+├─ tests/               測試 —— 六套 Python + 六套面板邏輯(不必開 Premiere)
 └─ output/              產物(每支影片一個資料夾)
 ```
 

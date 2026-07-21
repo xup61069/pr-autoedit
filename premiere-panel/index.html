@@ -77,6 +77,15 @@
     <button id="stop" class="btn stop" style="display:none">■ 停止</button>
 
     <div id="status" class="status">準備就緒</div>
+    <!-- 進度條:Python 印出 [進度] 開頭的行時才出現。
+         最花時間的幾步(轉錄、掃畫面、混音)以前完全沒有動靜,
+         分不出還在跑還是當掉了。 -->
+    <div id="progWrap" class="progwrap" style="display:none">
+      <div class="progtop">
+        <span id="progStage"></span><span id="progPct"></span>
+      </div>
+      <div class="progbar"><div id="progFill" class="progfill"></div></div>
+    </div>
     <pre id="log" class="log"></pre>
 
     <!-- 剪輯後工具:活專案的「隨時可改」按鈕(跑完一次剪輯後出現) -->

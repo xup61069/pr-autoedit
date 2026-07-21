@@ -73,7 +73,9 @@
     stopping = false;
     showStop(true);
     proc.on("close", function () {
-      if (running === proc) { running = null; showStop(false); }
+      // 行程結束就把進度條收掉 —— 留著一條停在 47% 的進度條,
+      // 會讓人以為還在跑
+      if (running === proc) { running = null; showStop(false); hideProgress(); }
     });
     return proc;
   }
@@ -125,17 +127,56 @@
   var LOG_ERR_RE = /(Traceback|Error|錯誤|失敗|找不到|⚠)/;
   var LOG_OK_RE = /(✓|完成)/;
   var logBuf = "";           // 這次執行的完整訊息,失敗時拿來對照錯誤翻譯表
+
+  // ---------- 進度條 ----------
+  // Python 在最花時間的幾步印出 `  [進度] 語音轉錄 45% 12.3/27.0 分`。
+  // 這裡把它畫成一條進度條,而不是一直往訊息區堆字 ——
+  // 長片的轉錄會印出上百行進度,全部堆進去會把真正的訊息淹掉。
+  // 格式要跟 modules/progress.py 的 PREFIX 一致。
+  var PROGRESS_RE = /^\s*\[進度\]\s+(.+?)\s+(\d+)%\s*(.*)$/;
+
+  function showProgress(stage, pct, detail) {
+    var wrap = $("progWrap");
+    if (!wrap) return;
+    wrap.style.display = "block";
+    $("progStage").textContent = stage + (detail ? "  " + detail : "");
+    $("progPct").textContent = pct + "%";
+    var fill = $("progFill");
+    fill.style.width = pct + "%";
+    fill.classList.toggle("done", pct >= 100);
+  }
+
+  function hideProgress() {
+    var wrap = $("progWrap");
+    if (!wrap) return;
+    wrap.style.display = "none";
+    $("progFill").style.width = "0%";
+    $("progFill").classList.remove("done");
+  }
+
   function appendLog(t) {
     logBuf += String(t);
     var log = $("log");
+    // 先把進度行挑掉再渲染。不能在迴圈裡 continue 就算數 ——
+    // 換行分隔是「除了第一行都補一個」,進度行就算不印文字,
+    // 還是會留下一個空行,長片跑完訊息區會多出上百個空行。
     var lines = String(t).split(/\r?\n/);
+    var keep = [];
     for (var i = 0; i < lines.length; i++) {
-      if (i > 0) log.appendChild(document.createTextNode("\n"));
-      if (!lines[i]) continue;
+      var m = PROGRESS_RE.exec(lines[i]);
+      if (m) {
+        showProgress(m[1], parseInt(m[2], 10), m[3]);
+        continue;
+      }
+      keep.push(lines[i]);
+    }
+    for (var j = 0; j < keep.length; j++) {
+      if (j > 0) log.appendChild(document.createTextNode("\n"));
+      if (!keep[j]) continue;
       var span = document.createElement("span");
-      if (LOG_ERR_RE.test(lines[i])) span.className = "lg-err";
-      else if (LOG_OK_RE.test(lines[i])) span.className = "lg-ok";
-      span.textContent = lines[i];
+      if (LOG_ERR_RE.test(keep[j])) span.className = "lg-err";
+      else if (LOG_OK_RE.test(keep[j])) span.className = "lg-ok";
+      span.textContent = keep[j];
       log.appendChild(span);
     }
     log.scrollTop = log.scrollHeight;
@@ -1180,6 +1221,7 @@
     $("pick").disabled = true;
     $("log").textContent = "";
     logBuf = "";
+    hideProgress();
     setStatus("處理中…(第一次要下載模型,較久)", "busy");
     appendLog("▶ 已啟動,正在載入程式與模型…(這段沒動靜是正常的)\n");
 

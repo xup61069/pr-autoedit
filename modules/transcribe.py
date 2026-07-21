@@ -180,6 +180,14 @@ def _transcribe_faster_whisper(audio_path: str) -> list[Word]:
         vad_filter=True,                    # 內建語音活動偵測,幫忙找靜音
     )
 
+    # faster-whisper 的 segments 是「產生器」——真正的辨識是在下面這個
+    # 迴圈裡一段一段跑出來的。這是整條管線最久的一步(長片好幾分鐘),
+    # 以前中間完全沒有輸出,使用者分不出還在跑還是當掉了。
+    # 每段都有 end(原始音訊的秒數),拿它跟總長度比就是進度。
+    from modules.progress import Reporter
+    total = float(getattr(info, "duration", 0.0) or 0.0)
+    rep = Reporter("語音轉錄", total, unit="分", scale=1 / 60)
+
     words: list[Word] = []
     for seg in segments:
         if seg.words:
@@ -189,6 +197,8 @@ def _transcribe_faster_whisper(audio_path: str) -> list[Word]:
                     start=w.start,
                     end=w.end,
                 ))
+        rep.update(getattr(seg, "end", 0.0) or 0.0)
+    rep.done()
 
     # 轉錄完就把模型放掉,不要一路佔著顯示卡記憶體到程式結束。
     # 後面還有混音、產 XML 等步驟(4K 影片可能要跑上一分鐘),

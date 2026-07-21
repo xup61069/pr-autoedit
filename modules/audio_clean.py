@@ -89,13 +89,22 @@ def extract_audio(source, out_wav: str) -> str:
     要接成一支。input_args() 會給出對應的 ffmpeg 輸入參數,這裡不必分辨。
     直接給一個路徑字串也可以(見 sources.coerce 的說明)。"""
     from modules.sources import coerce
+    from modules.progress import run_ffmpeg
     source = coerce(source)
-    subprocess.run([
+    run_ffmpeg([
         "ffmpeg", "-y", *source.input_args(),
         "-vn", "-ac", "1", "-ar", "48000",
         "-c:a", "pcm_s16le", out_wav,
-    ], check=True, capture_output=True)
+    ], "抽出音軌", _duration_of(source))
     return out_wav
+
+
+def _duration_of(source) -> float:
+    """來源總長度(秒),給進度條算百分比用。算不出來就回 0(不顯示進度)。"""
+    try:
+        return float(source.duration())
+    except Exception:
+        return 0.0
 
 
 def clean_vst(in_wav: str, out_wav: str) -> str:
@@ -113,7 +122,14 @@ def clean_vst(in_wav: str, out_wav: str) -> str:
             "       對 A1 軌掛降噪(建議做法,隨時可調可關)\n"
             "    3. 把「聲音處理方式」改成 none,先不做降噪")
 
-    print(f"  載入 {len(cfg.VST_CHAIN)} 個 VST 外掛並處理...")
+    # 這一步刻意沒有進度條:pedalboard 是「整段一次處理」,中間沒有任何
+    # 可以回報的節點。實測過分塊處理(reset=False)——輸出長度就不一樣了
+    # (外掛有自己的延遲與尾巴處理),等於改到聲音,不值得為了進度條冒這個險。
+    # 所以改成先講清楚要等多久,至少你知道它沒當掉。
+    mins = _wav_duration(in_wav) / 60
+    print(f"  載入 {len(cfg.VST_CHAIN)} 個 VST 外掛並處理"
+          + (f"({mins:.0f} 分鐘的音訊,這一步沒有進度顯示,請稍候)..."
+             if mins >= 3 else "..."))
     # 外掛載入與處理都包在 _suppress_native_output 裡,壓掉底層除錯訊息
     with _suppress_native_output():
         plugins = []
@@ -157,15 +173,24 @@ def clean_opensource(in_wav: str, out_wav: str) -> str:
     return out_wav
 
 
+def _wav_duration(path: str) -> float:
+    try:
+        import soundfile as sf
+        return float(sf.info(path).duration)
+    except Exception:
+        return 0.0
+
+
 def loudnorm(in_wav: str, out_wav: str) -> str:
     """ffmpeg 兩段式 loudnorm,精準達到目標 LUFS"""
+    from modules.progress import run_ffmpeg
     print(f"  響度標準化到 {cfg.TARGET_LUFS} LUFS...")
-    subprocess.run([
+    run_ffmpeg([
         "ffmpeg", "-y", "-i", in_wav,
         "-af", (f"loudnorm=I={cfg.TARGET_LUFS}:"
                 f"TP={cfg.TARGET_TRUE_PEAK}:LRA=11"),
         "-ar", "48000", out_wav,
-    ], check=True, capture_output=True)
+    ], "響度標準化", _wav_duration(in_wav))
     return out_wav
 
 
@@ -268,13 +293,15 @@ def mux_back(source, clean_wav: str, out_mp4: str) -> str:
         print(f"  ({os.path.basename(out_mp4)} 正被 Premiere 使用中,"
               f"改存 {os.path.basename(picked)})")
     out_mp4 = picked
+    from modules.progress import run_ffmpeg
     in_args = source.input_args()
+    total = _duration_of(source)
     # 路線 1:無損複製(絕大多數影片幾秒完成)
-    subprocess.run([
+    run_ffmpeg([
         "ffmpeg", "-y", *in_args, "-i", clean_wav,
         "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ac", "2",
         "-map", "0:v", "-map", "1:a", "-shortest", out_mp4,
-    ], check=True, capture_output=True)
+    ], "混回影片", total)
     if _video_stream_playable(out_mp4):
         return out_mp4
 
@@ -287,13 +314,13 @@ def mux_back(source, clean_wav: str, out_mp4: str) -> str:
     for encoder, label, extra in _encoder_ladder():
         print(f"  嘗試 {label}…")
         try:
-            subprocess.run([
+            run_ffmpeg([
                 "ffmpeg", "-y", *in_args, "-i", clean_wav,
                 "-map", "0:v", "-map", "1:a",
                 "-c:v", encoder, *extra, *_quality_args(encoder),
                 "-c:a", "aac", "-b:a", "192k", "-ac", "2",
                 "-shortest", out_mp4,
-            ], check=True, capture_output=True)
+            ], f"重新編碼({label})", total)
         except (subprocess.CalledProcessError, FileNotFoundError):
             tried.append(label)
             continue

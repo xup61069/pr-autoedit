@@ -375,6 +375,51 @@ def test_panel_dump_is_valid():
     print(f"  ✓ 面板設定 JSON 正常({len(data['fields'])} 個欄位)")
 
 
+def test_progress_lines_are_throttled_and_parsable():
+    """進度行的格式與節流。
+
+    格式要跟面板認得的一致(tests/test_panel_progress.js 會拿 Python 真的
+    印出來的行去餵面板),而節流是必要的:不節流的話,轉錄一支長片會吐出
+    好幾千行進度,把真正該看的訊息整個淹掉。"""
+    import io, contextlib, re
+    from modules.progress import Reporter, PREFIX
+
+    # 節流:同一個百分比不重複印
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        r = Reporter("測試步驟", 100.0, unit="分", scale=1 / 60)
+        for i in range(500):          # 連續灌 500 次
+            r.update(i / 10.0)
+        r.done()
+    lines = [l for l in buf.getvalue().splitlines() if PREFIX in l]
+    assert len(lines) < 60, f"沒有節流,印了 {len(lines)} 行"
+    assert lines, "完全沒有印出進度"
+
+    # 格式:面板的正規表示式要吃得下
+    pat = re.compile(r"^\s*\[進度\]\s+(.+?)\s+(\d+)%\s*(.*)$")
+    for line in lines:
+        m = pat.match(line)
+        assert m, f"面板解析不了這一行:{line!r}"
+        assert m.group(1) == "測試步驟", m.group(1)
+        assert 0 <= int(m.group(2)) <= 100, m.group(2)
+    assert pat.match(lines[-1]).group(2) == "100", \
+        f"最後一行應該是 100%,實際 {lines[-1]!r}"
+
+    # 百分比必須遞增,不能跳來跳去
+    pcts = [int(pat.match(l).group(2)) for l in lines]
+    assert pcts == sorted(pcts), f"百分比不是遞增的:{pcts}"
+
+    # 算不出總長度時要安靜(不能印出 0% 或除以零)
+    buf2 = io.StringIO()
+    with contextlib.redirect_stdout(buf2):
+        r2 = Reporter("未知長度", 0.0)
+        r2.update(5.0)
+        r2.done()
+    assert PREFIX not in buf2.getvalue(), \
+        "算不出總長度時不該印進度(會變成假的 0%)"
+    print(f"  ✓ 進度行格式正確且有節流(500 次更新 -> {len(lines)} 行)")
+
+
 def test_merge_sources():
     """多檔合併:順序、命名、指紋、相容性檢查。
 
@@ -704,6 +749,7 @@ if __name__ == "__main__":
     test_tests_never_touch_personal_config()
     test_every_setting_is_reachable_or_explained()
     test_panel_dump_is_valid()
+    test_progress_lines_are_throttled_and_parsable()
     test_merge_sources()
     test_source_accepts_a_plain_path()
     test_merge_rejects_mismatched_specs()
