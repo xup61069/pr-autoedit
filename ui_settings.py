@@ -289,14 +289,47 @@ def _all_presets() -> tuple[dict, list]:
 PANEL_EXTRA_KEYS = ["PREMIERE_VOICE_FX", "DENOISE_PER_CLIP_MAX"]
 
 
+def _vocab_budget() -> dict:
+    """提示詞的長度預算,交給面板即時試算用。
+
+    刻意從 transcribe 把數字「借」過來而不是在面板那邊抄一份:
+    抄一份的話,哪天調了權重或示範句,面板算出來的就跟實際不一樣,
+    而使用者只會看到「明明說放得下,結果術語沒生效」。"""
+    from modules.transcribe import (_est_tokens, _PROMPT_TOKEN_BUDGET,
+                                    _build_initial_prompt)
+    old = cfg.VOCAB_CATEGORIES, cfg.CUSTOM_VOCAB
+    cfg.VOCAB_CATEGORIES, cfg.CUSTOM_VOCAB = [], []
+    demo = _build_initial_prompt()          # 沒有詞彙表時 = 只剩示範句
+    cfg.VOCAB_CATEGORIES, cfg.CUSTOM_VOCAB = old
+    return {
+        "total": _PROMPT_TOKEN_BUDGET,
+        "demo": _est_tokens(demo),
+        "wrapper": _est_tokens("常見詞彙:。"),
+        # _est_tokens 的權重:ASCII 0.5、其餘 1.4,最後四捨五入
+        "ascii": 0.5,
+        "cjk": 1.4,
+    }
+
+
 def dump() -> None:
     values = {f["key"]: getattr(cfg, f["key"], None) for f in FIELDS}
     for _k in PANEL_EXTRA_KEYS:
         values[_k] = getattr(cfg, _k, None)
     presets, mine = _all_presets()
+    builtin_vocab = getattr(cfg, "DEFAULTS", {}).get("VOCAB_PRESETS", {})
+    vocab = getattr(cfg, "VOCAB_PRESETS", {})
     out = {
         "fields": fields_with_defaults(),
-        "categories_available": list(getattr(cfg, "VOCAB_PRESETS", {}).keys()),
+        "categories_available": list(vocab.keys()),
+        # 教學類型編輯器要用的三份資料:
+        #   vocab_presets  現在實際生效的詞(內建 + 你改過的)
+        #   builtin_vocab  原廠那份,「還原成內建」要靠它
+        #   vocab_budget   提示詞的長度上限與算法,讓面板可以「邊打邊算」。
+        #                  這個上限是 Whisper 的硬限制,超過的詞模型直接看不到,
+        #                  而且沒有任何徵兆——所以要在使用者打字的當下就講。
+        "vocab_presets": vocab,
+        "builtin_vocab": builtin_vocab,
+        "vocab_budget": _vocab_budget(),
         "collapsed_groups": COLLAPSED_GROUPS,
         "values": values,
         # 設定組合:presets=全部、my_presets=你自己存的(只有這些可以刪)、

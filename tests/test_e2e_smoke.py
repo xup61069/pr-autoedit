@@ -109,8 +109,13 @@ def test_prompt_fits_token_budget():
     import io, contextlib
     from modules.transcribe import (_build_initial_prompt, _est_tokens,
                                     _PROMPT_TOKEN_BUDGET)
-    old = cfg.VOCAB_CATEGORIES, cfg.CUSTOM_VOCAB, cfg.WHISPER_INITIAL_PROMPT
+    old = (cfg.VOCAB_CATEGORIES, cfg.CUSTOM_VOCAB, cfg.WHISPER_INITIAL_PROMPT,
+           cfg.VOCAB_PRESETS)
     cfg.WHISPER_INITIAL_PROMPT = None
+    # 只測「內建」詞庫。使用者在面板加的類型合併在 VOCAB_PRESETS 裡,
+    # 他想塞多長是他的自由(面板會即時告訴他快超標了),
+    # 不該讓他的個人詞庫決定專案測試過不過。
+    cfg.VOCAB_PRESETS = cfg.DEFAULTS["VOCAB_PRESETS"]
     tail = "你可以自己調整看看。"
 
     # 每一類單選都要「完整放得下」,而且還要留得下幾個個人術語 ——
@@ -134,7 +139,8 @@ def test_prompt_fits_token_budget():
     assert p.endswith(tail), "全選時標點示範句沒有留在最尾巴"
     assert "我的頻道名" in p, "個人術語被砍掉了(它應該排最前面、最不該犧牲)"
 
-    cfg.VOCAB_CATEGORIES, cfg.CUSTOM_VOCAB, cfg.WHISPER_INITIAL_PROMPT = old
+    (cfg.VOCAB_CATEGORIES, cfg.CUSTOM_VOCAB, cfg.WHISPER_INITIAL_PROMPT,
+     cfg.VOCAB_PRESETS) = old
     print("  ✓ 提示詞不超長、示範句在尾巴、個人術語不被犧牲")
 
 
@@ -187,9 +193,14 @@ def test_vocab_has_no_redundancy():
       1. 同一個詞出現在兩個類型裡(多選時會被去重,但代表分類沒分乾淨);
       2. 短詞已經整個包在長詞裡面 —— 「遮罩」的字元本來就在「軌道遮罩」中,
          兩個都收等於同一串字付兩次錢。
-    這兩件事看程式碼很難發現(詞庫是一大片字),所以用測試守著。"""
+    這兩件事看程式碼很難發現(詞庫是一大片字),所以用測試守著。
+
+    註:檢查的是「內建」那份(DEFAULTS),不是合併後的。使用者自己在面板
+    加的類型存在 config/vocab_local.json,那是他家的事——不該因為他加了
+    一個跟內建重複的詞,就讓整個專案的測試變紅。"""
+    builtin = cfg.DEFAULTS["VOCAB_PRESETS"]
     seen, dup = {}, []
-    for cat, words in cfg.VOCAB_PRESETS.items():
+    for cat, words in builtin.items():
         assert len(words) == len(set(words)), f"「{cat}」自己就有重複的詞"
         for w in words:
             if w in seen:
@@ -198,10 +209,46 @@ def test_vocab_has_no_redundancy():
     assert not dup, "跨類型重複:" + "、".join(dup)
 
     contained = [f"「{cat}」的「{a}」已經包在「{b}」裡面"
-                 for cat, ws in cfg.VOCAB_PRESETS.items()
+                 for cat, ws in builtin.items()
                  for a in ws for b in ws if a != b and a in b]
     assert not contained, "重複收了同一串字:" + "、".join(contained)
-    print(f"  ✓ {len(cfg.VOCAB_PRESETS)} 類詞庫沒有重複、也沒有包含關係的冗詞")
+    print(f"  ✓ {len(builtin)} 類內建詞庫沒有重複、也沒有包含關係的冗詞")
+
+
+def test_vocab_local_merges_and_keeps_builtin():
+    """面板「編輯類型」寫的 vocab_local.json 要能改內建、也能開新類型,
+    而且內建那份必須原封不動留著——不然「還原成內建」就回不去了。
+
+    也要確認檔案壞掉時不會把整條管線帶下水:這個檔是使用者會自己去編的,
+    少一個逗號就整支程式起不來的話,他只會看到一堆看不懂的錯誤。"""
+    import json, importlib, shutil
+    p = os.path.join(os.path.dirname(__file__), "..", "config", "vocab_local.json")
+    bak = p + ".testbak"
+    had = os.path.exists(p)
+    if had:
+        shutil.copy2(p, bak)
+    try:
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump({"剪輯": ["我的自訂詞"], "木工": ["榫接", "刨刀"]},
+                      f, ensure_ascii=False)
+        m = importlib.reload(cfg)
+        assert m.VOCAB_PRESETS["剪輯"] == ["我的自訂詞"], "同名應該蓋掉內建那一類"
+        assert m.VOCAB_PRESETS["木工"] == ["榫接", "刨刀"], "新名字應該多一類"
+        assert "Lumetri" in m.DEFAULTS["VOCAB_PRESETS"]["剪輯"], \
+            "內建那份被改掉了,還原成內建會回不去"
+
+        # 檔案壞掉:應該安靜地當作沒有,而不是讓 import 直接爆掉
+        with open(p, "w", encoding="utf-8") as f:
+            f.write("{ 這不是合法的 JSON")
+        m = importlib.reload(cfg)
+        assert "Lumetri" in m.VOCAB_PRESETS["剪輯"], "檔案壞掉時應退回內建詞庫"
+        print("  ✓ 個人詞庫:同名覆蓋、新名新增、內建保留、檔案壞掉不會爆")
+    finally:
+        if had:
+            shutil.move(bak, p)
+        elif os.path.exists(p):
+            os.remove(p)
+        importlib.reload(cfg)
 
 
 def test_voicefx_detection():
@@ -249,4 +296,5 @@ if __name__ == "__main__":
     test_prompt_fits_token_budget()
     test_workspace_tidies_output()
     test_vocab_has_no_redundancy()
+    test_vocab_local_merges_and_keeps_builtin()
     test_voicefx_detection()

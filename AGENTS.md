@@ -95,6 +95,7 @@ python -m tests.test_remap      # 動了 remap.py 或 models.py
 python -m tests.test_decision   # 動了 decision.py 或 config/settings.py
 python -m tests.test_e2e_smoke  # 動了任何東西,跑這個確認主幹沒斷
 node tests/test_panel_voicefx.js  # 動了 host.jsx 的掛效果邏輯或 PREMIERE_VOICE_FX
+node tests/test_panel_vocab.js    # 動了提示詞長度估算或教學類型編輯器
 ```
 
 `test_panel_voicefx.js` 用一個假的 Premiere 跑 `host.jsx`,所以中文版介面、

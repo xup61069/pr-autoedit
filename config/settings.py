@@ -531,6 +531,26 @@ if _os.path.exists(_json_path):
     except (ValueError, OSError):
         pass
 
+# 教學類型詞庫的個人擴充(config/vocab_local.json,不進版控)。
+# 面板的「編輯類型」會寫這個檔:
+#   同名字   = 蓋掉內建那一類的詞(覺得「剪輯」少收了你常講的術語就改它)
+#   新名字   = 多一個你自己的類型
+# 內建那份原封不動留在 DEFAULTS 裡,所以「還原成內建」隨時回得去。
+# 這裡合併而不是只給面板看:詞庫會影響辨識,pipeline 也要吃得到。
+_vocab_path = _os.path.join(_os.path.dirname(__file__), "vocab_local.json")
+if _os.path.exists(_vocab_path):
+    try:
+        with open(_vocab_path, "r", encoding="utf-8") as _f:
+            _mine = _json.load(_f)
+        if isinstance(_mine, dict):
+            VOCAB_PRESETS = dict(VOCAB_PRESETS)     # 複製,別動到快照
+            for _name, _words in _mine.items():
+                if isinstance(_words, list):
+                    VOCAB_PRESETS[str(_name)] = [
+                        str(_w).strip() for _w in _words if str(_w).strip()]
+    except (ValueError, OSError):
+        pass
+
 # 舊設定檔相容:「看畫面決定」以前是一個獨立開關 MOTION_DETECT,
 # 現在併進 SILENCE_ACTION 的第三個選項 "auto"。
 # 舊設定檔若特地把它關掉,代表「我不要看畫面」——那就把 auto 降回單純快轉,

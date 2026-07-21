@@ -11,7 +11,23 @@ python -m tests.test_remap
 python -m tests.test_decision
 python -m tests.test_e2e_smoke
 node tests/test_panel_voicefx.js    # 面板掛人聲效果的邏輯(不必開 Premiere)
+node tests/test_panel_vocab.js      # 教學類型編輯器的額度試算
 ```
+
+## 介面文案在哪裡改
+
+想改面板上的字,照這張表找:
+
+| 想改什麼 | 檔案 |
+|---|---|
+| 設定項的標題、說明、分組名稱 | `ui_settings.py` 的 `FIELDS`(每筆的 `label` / `hint` / `group`) |
+| 按鈕文字、固定的段落說明 | `premiere-panel/index.html` |
+| 跑的時候跳出來的訊息、錯誤解釋 | `premiere-panel/js/main.js` |
+| 審閱報告裡的文字 | `modules/report.py` |
+| 設定檔本身的註解(不是 UI,但常一起改) | `config/settings.py` |
+
+改完 `ui_settings.py` 的文案,面板重開就會生效(表單是照 `FIELDS` 自動長出來的,
+不必動 HTML)。改 `index.html` / `main.js` / `style.css` 也是重開面板即可。
 
 ## 改動原則
 

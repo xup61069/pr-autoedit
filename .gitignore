@@ -46,4 +46,6 @@ config/panel.json
 
 # 打包出來的發佈檔(不進版控)
 dist/
+# 你自己存的設定組合與教學類型詞庫(個人的,不進版控)
 config/presets_local.json
+config/vocab_local.json

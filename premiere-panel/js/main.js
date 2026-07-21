@@ -561,6 +561,12 @@
         });
         input.appendChild(chip);
       });
+      // 「編輯類型」:內建詞庫不見得剛好收到你常講的詞,讓你自己改、自己開新類型
+      var edit = document.createElement("span");
+      edit.className = "cat edit";
+      edit.textContent = "✎ 編輯類型";
+      edit.addEventListener("click", toggleVocabEditor);
+      input.appendChild(edit);
       controls[f.key] = function () { return picked.slice(); };
     }
 
@@ -573,6 +579,191 @@
     }
     return wrap;
   }
+
+  // ---------- 教學類型編輯器 ----------
+  // 你改的詞存進 config/vocab_local.json(不進版控,更新專案不會被蓋)。
+  // 同名 = 蓋掉內建那一類;新名字 = 多一類。內建那份永遠留著,隨時還原得回去。
+  var VOCAB_FILE = function () {
+    return path.join(PROJECT_DIR, "config", "vocab_local.json");
+  };
+
+  function readVocabLocal() {
+    try {
+      if (fs.existsSync(VOCAB_FILE())) {
+        return JSON.parse(fs.readFileSync(VOCAB_FILE(), "utf8")) || {};
+      }
+    } catch (e) {}
+    return {};
+  }
+
+  function writeVocabLocal(obj) {
+    fs.writeFileSync(VOCAB_FILE(), JSON.stringify(obj, null, 2), "utf8");
+  }
+
+  // 估算提示詞長度。權重與上限都是從 Python 那邊帶過來的(ui_settings 的
+  // vocab_budget),不在這裡自己抄一份數字 —— 抄了就會有「面板說放得下、
+  // 實際卻被模型砍掉」這種查不出來的落差。
+  function estTokens(s) {
+    var b = (settingsData && settingsData.vocab_budget) || {};
+    var a = b.ascii || 0.5, c = b.cjk || 1.4, n = 0;
+    for (var i = 0; i < s.length; i++) {
+      n += s.charCodeAt(i) < 128 ? a : c;
+    }
+    return Math.floor(n + 0.5);
+  }
+
+  function parseWords(text) {
+    return String(text || "").split(/[\n,,、]+/)
+      .map(function (s) { return s.trim(); })
+      .filter(function (s) { return s; });
+  }
+
+  function vocabSay(msg, good) {
+    var el = $("vocabMsg");
+    el.textContent = msg || "";
+    el.style.color = good ? "#2e8b57" : "#e06c6c";
+  }
+
+  // 邊打邊算:這一類單獨勾選時,提示詞會用掉多少、還剩多少。
+  // 超過上限的部分 Whisper 直接看不到,而且不會有任何錯誤訊息,
+  // 所以一定要在使用者還在打字的時候就講清楚。
+  function updateVocabBudget() {
+    var b = (settingsData && settingsData.vocab_budget) || {};
+    var total = b.total || 223;
+    var fixed = (b.demo || 0) + (b.wrapper || 0);
+    var words = parseWords($("vocabWords").value);
+    var used = fixed + estTokens(words.join("、"));
+    var left = total - used;
+    var el = $("vocabBudget");
+    el.textContent = words.length + " 個詞,約用掉 " + used + " / " + total
+      + " 額度(固定開銷 " + fixed + "),還剩 " + left;
+    el.className = "budget" + (left < 0 ? " over" : (left < 10 ? " tight" : ""));
+    if (left < 0) {
+      el.textContent += " ⚠ 太長了,排在後面的詞模型會看不到";
+    } else if (left < 10) {
+      el.textContent += " ⚠ 很擠,再加詞就會被砍";
+    }
+  }
+
+  function fillVocabPicker(keep) {
+    var sel = $("vocabPick");
+    var vocab = (settingsData && settingsData.vocab_presets) || {};
+    var builtin = (settingsData && settingsData.builtin_vocab) || {};
+    sel.innerHTML = "";
+    Object.keys(vocab).forEach(function (name) {
+      var op = document.createElement("option");
+      op.value = name;
+      op.textContent = name + (name in builtin ? "" : "(我的)");
+      sel.appendChild(op);
+    });
+    if (keep && vocab[keep]) sel.value = keep;
+  }
+
+  function loadVocabInto(name) {
+    var vocab = (settingsData && settingsData.vocab_presets) || {};
+    $("vocabWords").value = (vocab[name] || []).join("、");
+    updateVocabBudget();
+    vocabSay("");
+  }
+
+  function toggleVocabEditor() {
+    var box = $("vocabEditor");
+    if (!settingsData) return;
+    if (box.style.display === "none") {
+      box.style.display = "";
+      var cur = (controls["VOCAB_CATEGORIES"] ?
+        controls["VOCAB_CATEGORIES"]() : [])[0];
+      fillVocabPicker(cur);
+      loadVocabInto($("vocabPick").value);
+    } else {
+      box.style.display = "none";
+    }
+  }
+
+  $("vocabPick").addEventListener("change", function () {
+    loadVocabInto(this.value);
+  });
+  $("vocabWords").addEventListener("input", updateVocabBudget);
+
+  $("vocabNew").addEventListener("click", function () {
+    var name = window.prompt("新類型的名字(例如:直播、烘焙、木工):", "");
+    if (!name) return;
+    name = String(name).trim();
+    if (!name) return;
+    if ((settingsData.vocab_presets || {})[name]) {
+      vocabSay("已經有「" + name + "」這一類了,直接在上面選它來改", false);
+      return;
+    }
+    settingsData.vocab_presets[name] = [];
+    fillVocabPicker(name);
+    $("vocabWords").value = "";
+    updateVocabBudget();
+    vocabSay("新類型「" + name + "」已建立,把詞填進去再按儲存", true);
+  });
+
+  $("vocabSave").addEventListener("click", function () {
+    var name = $("vocabPick").value;
+    if (!name) return;
+    var words = parseWords($("vocabWords").value);
+    var mine = readVocabLocal();
+    mine[name] = words;
+    try {
+      writeVocabLocal(mine);
+    } catch (e) {
+      vocabSay("存不起來:" + e.message, false);
+      return;
+    }
+    settingsData.vocab_presets[name] = words;
+    if ((settingsData.categories_available || []).indexOf(name) < 0) {
+      settingsData.categories_available.push(name);
+      renderForm();                 // 新類型要在晶片列出現
+      $("vocabEditor").style.display = "";
+      fillVocabPicker(name);
+    }
+    vocabSay("已儲存「" + name + "」(" + words.length + " 個詞)"
+      + ",下次剪輯自動重新辨識", true);
+  });
+
+  $("vocabReset").addEventListener("click", function () {
+    var name = $("vocabPick").value;
+    var builtin = (settingsData.builtin_vocab || {})[name];
+    if (!builtin) {
+      vocabSay("「" + name + "」是你自己新增的,沒有內建版本可以還原", false);
+      return;
+    }
+    var mine = readVocabLocal();
+    delete mine[name];
+    try { writeVocabLocal(mine); } catch (e) {
+      vocabSay("還原失敗:" + e.message, false); return;
+    }
+    settingsData.vocab_presets[name] = builtin.slice();
+    $("vocabWords").value = builtin.join("、");
+    updateVocabBudget();
+    vocabSay("「" + name + "」已還原成內建的 " + builtin.length + " 個詞", true);
+  });
+
+  $("vocabDel").addEventListener("click", function () {
+    var name = $("vocabPick").value;
+    if ((settingsData.builtin_vocab || {})[name]) {
+      vocabSay("內建類型不能刪(可以按「還原成內建」,或不要勾選它)", false);
+      return;
+    }
+    var mine = readVocabLocal();
+    delete mine[name];
+    try { writeVocabLocal(mine); } catch (e) {
+      vocabSay("刪不掉:" + e.message, false); return;
+    }
+    delete settingsData.vocab_presets[name];
+    settingsData.categories_available =
+      (settingsData.categories_available || []).filter(function (n) {
+        return n !== name;
+      });
+    renderForm();
+    $("vocabEditor").style.display = "";
+    fillVocabPicker();
+    loadVocabInto($("vocabPick").value);
+    vocabSay("已刪除「" + name + "」", true);
+  });
 
   // ---------- 設定組合 ----------
   var PRESETS_FILE = function () {
