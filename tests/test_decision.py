@@ -259,6 +259,44 @@ def test_protect_words_allows_partial_overlap():
     print("  ✓ 只剪到詞邊緣的空白不受影響")
 
 
+def test_presets_keep_their_promise():
+    """每個內建組合的名字,不能承諾它做不到的事。
+
+    這個專案已經在同一個地方栽過兩次:
+      第一次 —— 「保守」「完整保留」寫了 SILENCE_ACTION=speed,卻又吃到
+                 當時獨立的畫面偵測開關,畫面靜止的停頓照樣被剪掉。
+      第二次 —— 「完整保留(僅壓縮停頓)」只用 FILLER_PAUSE_SEC 擋住了
+                 「嗯、呃」,沒擋住「然後、就是」(那條路吃的是
+                 FILLER_ISOLATED_GAP_SEC),名字說完整保留卻在砍連接詞。
+
+    兩次都不是單一函式的邏輯錯誤,是「組合設定之間的交互作用」,
+    所以這裡刻意走完整的 build_segments、逐個組合實跑,而不是檢查字典內容。
+    名字裡有「保守 / 不剪掉 / 不動」的,就真的不准出現停頓被刪除。"""
+    saved = {k: getattr(cfg, k) for k in cfg.PRESET_KEYS}
+    try:
+        for name, preset in cfg.SETTING_PRESETS.items():
+            # 照面板 presetApply 的邏輯:組合沒寫的一律回內建預設
+            for k in cfg.PRESET_KEYS:
+                setattr(cfg, k, preset[k] if k in preset else cfg.DEFAULTS[k])
+            words = [Word("大家好", 0.0, 1.0), Word("接下來", 6.0, 7.0)]
+            segs = build_segments(words, 30.0, int(8.0 * 30))
+            cut_silence = [s for s in segs
+                           if s.action == "delete" and s.reason == "silence"]
+            if "保守" in name:
+                assert not cut_silence, \
+                    f"組合「{name}」的名字承諾不剪停頓,實際剪掉了 {cut_silence}"
+                assert any(s.action == "speed" for s in segs), \
+                    f"組合「{name}」該把停頓壓縮掉,實際完全沒動"
+            # 沒有任何組合能承諾「完全不刪字」——去不去冗詞不在 PRESET_KEYS 裡
+            assert "完整保留" not in name, (
+                f"組合「{name}」的名字暗示連冗詞都會留著,但組合動不到冗詞設定。"
+                "請改成只承諾停頓的名字。")
+    finally:
+        for k, v in saved.items():
+            setattr(cfg, k, v)
+    print(f"  ✓ {len(cfg.SETTING_PRESETS)} 個內建組合的名字都跟實際行為相符")
+
+
 if __name__ == "__main__":
     print("執行決策引擎測試...")
     test_always_filler_deleted()
@@ -279,4 +317,5 @@ if __name__ == "__main__":
     test_drop_retakes_keeps_coverage()
     test_protect_words_skips_whole_word_cuts()
     test_protect_words_allows_partial_overlap()
+    test_presets_keep_their_promise()
     print("\n全部通過 ✓  決策引擎邏輯正確。")
