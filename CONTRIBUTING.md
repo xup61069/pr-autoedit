@@ -10,6 +10,7 @@
 python -m tests.test_remap
 python -m tests.test_decision
 python -m tests.test_e2e_smoke
+node tests/test_panel_voicefx.js    # 面板掛人聲效果的邏輯(不必開 Premiere)
 ```
 
 ## 改動原則

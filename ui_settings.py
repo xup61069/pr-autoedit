@@ -275,8 +275,22 @@ def _all_presets() -> tuple[dict, list]:
     return presets, mine
 
 
+# 面板的程式邏輯要用、但不做成表單控制項的設定。
+#
+# 不是每個設定都適合做成控制項:人聲效果鏈是巢狀清單(沒有對應的控制項型別)、
+# 片段數上限是安全閥而不是日常會調的東西。但面板還是得「讀得到」它們,
+# 否則使用者在 settings_local.json 改了卻完全沒作用,而且從畫面上看不出來
+# ——DENOISE_PER_CLIP_MAX 以前就是這樣,面板永遠讀不到、只能吃寫死的 20。
+#
+# 放這裡是安全的:面板存檔時只收「表單控制項」上的值(見 main.js 的
+# collectValues),所以這些鍵不會被反寫進 settings_local.json 釘死。
+PANEL_EXTRA_KEYS = ["PREMIERE_VOICE_FX", "DENOISE_PER_CLIP_MAX"]
+
+
 def dump() -> None:
     values = {f["key"]: getattr(cfg, f["key"], None) for f in FIELDS}
+    for _k in PANEL_EXTRA_KEYS:
+        values[_k] = getattr(cfg, _k, None)
     presets, mine = _all_presets()
     out = {
         "fields": fields_with_defaults(),

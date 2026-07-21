@@ -261,13 +261,81 @@ function prDumpSequenceLayout(outPath) {
 }
 
 /*
- * (實驗)用 QE 後門把音訊效果掛到目前序列的每個聲音片段上。
- * QE 不是 Adobe 官方支援的 API,所以整段都包 try/catch:
- * 成功回 "OK 掛上數 失敗數",找不到效果回 "NOFX"(面板會改教使用者
- * 用音軌混音器手動掛,一次搞定)。
- * skipJoined:用 | 分隔的片段名稱開頭,例如「音樂」= 音樂段不掛降噪。
+ * 這台 Premiere 有哪些音訊效果可以掛(回傳用 | 分隔的名稱)。
+ *
+ * 存在的理由:效果名稱是「跟著介面語言翻譯」的,所以在別人的 Premiere 上
+ * 到底叫什麼,寫死猜不到。掛效果失敗時把這份清單印出來,一眼就看得出
+ * 是名字對不上還是根本沒這個效果,不必瞎猜。
  */
-function prApplyAudioEffect(effectName, skipJoined, maxClips) {
+function prListAudioEffects() {
+    try {
+        if (typeof app === "undefined" || !app.project) {
+            return "ERROR: 沒有開啟中的 Premiere 專案";
+        }
+        app.enableQE();
+        // 有些版本是屬性、有些是函式,兩種都接
+        var list = qe.project.getAudioEffectList;
+        if (typeof list === "function") list = qe.project.getAudioEffectList();
+        if (!list || !list.length) return "NONE";
+        var names = [];
+        for (var i = 0; i < list.length; i++) {
+            names.push(String(list[i].name || list[i]));
+        }
+        return "OK " + names.join("|");
+    } catch (e) {
+        return "ERROR: " + e.toString();
+    }
+}
+
+/*
+ * 在這台 Premiere 上,把一組「候選名稱」解析成真的存在的那一個。
+ * 先精準比對(不分大小寫),再退而求其次用包含比對——中文版有時會在
+ * 名稱前後多帶字,例如「動態處理器」。找不到回 null。
+ */
+function prResolveEffect(candidates) {
+    var i, fx;
+    for (i = 0; i < candidates.length; i++) {
+        var nm = candidates[i];
+        if (!nm) continue;
+        try {
+            fx = qe.project.getAudioEffectByName(nm);
+            if (fx) return { fx: fx, name: nm };
+        } catch (e1) { }
+    }
+    // 精準比對全軍覆沒,改掃一遍完整清單做包含比對
+    try {
+        var list = qe.project.getAudioEffectList;
+        if (typeof list === "function") list = qe.project.getAudioEffectList();
+        for (var j = 0; list && j < list.length; j++) {
+            var have = String(list[j].name || list[j]);
+            for (i = 0; i < candidates.length; i++) {
+                var want = String(candidates[i] || "").toLowerCase();
+                if (want && have.toLowerCase().indexOf(want) >= 0) {
+                    try {
+                        fx = qe.project.getAudioEffectByName(have);
+                        if (fx) return { fx: fx, name: have };
+                    } catch (e2) { }
+                }
+            }
+        }
+    } catch (e3) { }
+    return null;
+}
+
+/*
+ * (實驗)用 QE 後門把一串人聲效果依序掛到目前序列的每個聲音片段上。
+ * QE 不是 Adobe 官方支援的 API,所以整段都包 try/catch。
+ *
+ * chainJoined:效果鏈,用 || 分隔每一個效果,每個效果內部用 | 分隔候選名稱。
+ *              例:"DeNoise|消除雜訊||Parametric Equalizer|參數等化器"
+ *              給候選名稱是因為效果名會跟著介面語言翻譯,寫死一個會找不到。
+ * skipJoined:用 | 分隔的片段名稱開頭,例如「音樂」= 音樂段不掛
+ *              (降噪是衝著人聲設計的,會把音樂當噪音削掉)。
+ *
+ * 回傳:"OK 掛上數 失敗數 用到的效果名"、"NOFX 沒解析到的候選"、
+ *       "TOOMANY 片段數"。面板會照這些狀況給不同的說明。
+ */
+function prApplyVoiceChain(chainJoined, skipJoined, maxClips) {
     try {
         if (typeof app === "undefined" || !app.project) {
             return "ERROR: 沒有開啟中的 Premiere 專案";
@@ -276,16 +344,25 @@ function prApplyAudioEffect(effectName, skipJoined, maxClips) {
             return "ERROR: 沒有作用中的序列,請先點開要處理的序列";
         }
         app.enableQE();
-        var fx = null;
-        try { fx = qe.project.getAudioEffectByName(effectName); } catch (e1) { }
-        if (!fx) return "NOFX";
+
+        // 先把每個效果解析成這台機器上真的存在的名稱。
+        // 一個都湊不齊就整個不做——只掛到一半的音色比不掛還難判斷。
+        var groups = String(chainJoined).split("||");
+        var resolved = [], missing = [];
+        for (var g = 0; g < groups.length; g++) {
+            var cands = groups[g].split("|");
+            var hit = prResolveEffect(cands);
+            if (hit) resolved.push(hit); else missing.push(cands[0]);
+        }
+        if (!resolved.length || missing.length) {
+            return "NOFX " + missing.join("|");
+        }
 
         var qseq = qe.project.getActiveSequence();
         var skips = skipJoined ? String(skipJoined).split("|") : [];
 
-        // 先數一遍要掛幾個。每個 VoiceFX 實例都佔顯示卡記憶體,
-        // 剪很兇的片動輒上千個片段,真的掛下去會把 VRAM 吃爆、Premiere 卡死。
-        // 數量太多就直接拒絕,讓面板改教「整軌掛一個」的做法。
+        // 先數一遍要掛幾個。剪很兇的片動輒上千個片段,再乘上鏈裡的效果數,
+        // 時間軸會明顯變頓。數量太多就直接拒絕,讓面板改教「整軌掛一次」。
         var limit = parseInt(maxClips, 10);
         if (!isNaN(limit) && limit > 0) {
             var n = 0, t2, tr2;
@@ -314,12 +391,17 @@ function prApplyAudioEffect(effectName, skipJoined, maxClips) {
                         if (skips[s] && nm.indexOf(skips[s]) === 0) { skip = true; break; }
                     }
                     if (skip) continue;
-                    item.addAudioEffect(fx);
+                    // 依序掛:降噪 -> EQ -> 壓縮。順序有差,先清乾淨再修頻率再壓音量
+                    for (var r = 0; r < resolved.length; r++) {
+                        item.addAudioEffect(resolved[r].fx);
+                    }
                     applied++;
                 } catch (e2) { failed++; }
             }
         }
-        return "OK " + applied + " " + failed;
+        var used = [];
+        for (var u = 0; u < resolved.length; u++) used.push(resolved[u].name);
+        return "OK " + applied + " " + failed + " " + used.join("|");
     } catch (e) {
         return "ERROR: " + e.toString();
     }

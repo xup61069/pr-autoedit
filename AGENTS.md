@@ -94,7 +94,12 @@
 python -m tests.test_remap      # 動了 remap.py 或 models.py
 python -m tests.test_decision   # 動了 decision.py 或 config/settings.py
 python -m tests.test_e2e_smoke  # 動了任何東西,跑這個確認主幹沒斷
+node tests/test_panel_voicefx.js  # 動了 host.jsx 的掛效果邏輯或 PREMIERE_VOICE_FX
 ```
+
+`test_panel_voicefx.js` 用一個假的 Premiere 跑 `host.jsx`,所以中文版介面、
+上千個片段、效果不存在這幾種情況不必真的開 Premiere 就測得到
+——那幾種偏偏是最容易壞、手動又最難湊出來的。
 
 這些測試不需要 GPU、ffmpeg 或影片就能跑,是快速回歸檢查。改完沒跑測試就交付,
 等於沒改完。
@@ -130,7 +135,7 @@ python -m tests.test_e2e_smoke  # 動了任何東西,跑這個確認主幹沒斷
 
 - **Premiere CEP 面板**:已成熟,在 `premiere-panel/`。功能:選影片→跑 pipeline→
   匯入;設定表單(由 `ui_settings.py` dump 自動生成,加欄位面板自動長出);
-  剪輯後工具(開報告 / 重算剪輯匯入新序列 / QE 掛降噪 / 依序列版面產字幕)。
+  剪輯後工具(開報告 / 重算剪輯匯入新序列 / QE 掛人聲處理 / 依序列版面產字幕)。
   待做:自動抓目前選取素材路徑、進度條。面板刻意做薄,
   真正邏輯全在 Python,日後要換 UXP 影響面小。
 - **FunASR 引擎**:已實作為可選(`transcribe.py`)。對中英夾雜內容不如 Whisper,

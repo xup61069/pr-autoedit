@@ -1014,43 +1014,77 @@
     });
   });
 
-  // ---------- P4:幫目前序列掛降噪(QE 實驗;失敗教用音軌混音器) ----------
-  // 從 VST 鏈第一個外掛的檔名推效果名(VoiceFX.vst3 -> VoiceFX)
-  function effectNameFrom(values) {
-    var chain = (values && values.VST_CHAIN) || [];
-    if (!chain.length) return null;
-    var base = String(chain[0]).replace(/\\/g, "/").split("/").pop();
-    return base.replace(/\.vst3$/i, "");
+  // ---------- P4:幫目前序列掛人聲處理(QE 實驗;失敗教用音軌混音器) ----------
+  // 預設掛 Premiere 內建的降噪 -> EQ -> 壓縮器:人人都有、不必安裝、
+  // 純 CPU 不吃顯卡記憶體,而且就是「基本音效 > 對話」在做的那三件事。
+  var VOICE_FX_FALLBACK = [
+    ["DeNoise", "消除雜訊", "降噪"],
+    ["Parametric Equalizer", "參數等化器", "參數式等化器"],
+    ["Dynamics", "Dynamics Processing", "動態", "動態處理"]
+  ];
+
+  // 設定裡的效果鏈壓成 ExtendScript 吃的字串:效果之間 ||、候選名稱之間 |
+  // 這串會被塞進 evalScript 的字串引數裡,所以反斜線和雙引號要先跳脫
+  // ——效果名稱現在是使用者可以自己改的,不能假設裡面很乾淨。
+  function voiceChainOf(values) {
+    var chain = (values && values.PREMIERE_VOICE_FX) || VOICE_FX_FALLBACK;
+    var out = [];
+    for (var i = 0; i < chain.length; i++) {
+      // 允許只寫一個名字的簡寫寫法
+      var c = chain[i];
+      out.push((typeof c === "string" ? [c] : c).join("|"));
+    }
+    return out.join("||").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
   }
 
-  var MIXER_HINT = "改用這個做法(更穩也更省資源):視窗 > 音軌混音器,"
-    + "A1 軌最上面的效果插槽選 VoiceFX。整軌一次搞定,隨時可調。";
-
-  // 把降噪掛到目前序列的每個片段。done(成功與否, 給人看的訊息)
-  //
-  // ⚠️ 這是「每個片段各掛一個」。VoiceFX 是 NVIDIA 的 AI 降噪,每個實例都佔
-  // 顯示卡記憶體,片段一多就會把 VRAM 吃爆、Premiere 卡到不能用。
-  // 所以會先問 Premiere 有幾個片段,超過上限就拒絕。
-  function applyDenoise(values, done) {
-    var name = effectNameFrom(values);
-    if (!name) {
-      done(false, "設定裡沒有 VST 外掛路徑。" + MIXER_HINT);
-      return;
+  function fxLabelsOf(values) {
+    var chain = (values && values.PREMIERE_VOICE_FX) || VOICE_FX_FALLBACK;
+    var out = [];
+    for (var i = 0; i < chain.length; i++) {
+      var c = chain[i];
+      out.push(typeof c === "string" ? c : c[0]);
     }
+    return out.join(" → ");
+  }
+
+  var MIXER_HINT = "改用這個做法(更穩也更快):視窗 > 音軌混音器,"
+    + "A1 軌的效果插槽由上往下依序選「降噪 DeNoise」→「參數等化器 "
+    + "Parametric Equalizer」→「動態 Dynamics」。插槽有五格,三個放得下;"
+    + "整軌一次搞定,不管幾個片段都一樣快,隨時可調也可整個關掉比較差異。";
+
+  // 把人聲處理掛到目前序列的每個片段。done(成功與否, 給人看的訊息)
+  //
+  // ⚠️ 這是「每個片段各掛一組」。片段一多,再乘上鏈裡的三個效果,
+  // 時間軸會明顯變頓,所以會先問 Premiere 有幾個片段,超過上限就拒絕。
+  function applyVoiceFx(values, done) {
     var max = values && values.DENOISE_PER_CLIP_MAX;
     if (typeof max !== "number") max = 20;
-    // 音樂段不掛降噪(降噪是衝著人聲設計的,會把音樂當噪音削掉)
-    cs.evalScript('prApplyAudioEffect("' + name + '","音樂",' + max + ')',
+    // 音樂段不掛(降噪是衝著人聲設計的,會把音樂當噪音削掉)
+    cs.evalScript('prApplyVoiceChain("' + voiceChainOf(values) + '","音樂",'
+      + max + ')',
       function (r) {
         if (r && r.indexOf("OK") === 0) {
-          done(true, "降噪已掛到 " + r.split(" ")[1] + " 個聲音片段 ✓ "
-            + "到「效果控制」隨時調整,不滿意可 Ctrl+Z 復原");
+          var p = r.split(" ");
+          done(true, "人聲處理已掛到 " + p[1] + " 個聲音片段 ✓ "
+            + "(" + String(p[3] || "").split("|").join(" → ") + ")"
+            + "。到「效果控制」隨時調整,不滿意可 Ctrl+Z 復原");
         } else if (r && r.indexOf("TOOMANY") === 0) {
           done(false, "這條序列有 " + r.split(" ")[1] + " 個片段,"
-            + "一個一個掛會產生同樣數量的 AI 降噪實例,"
-            + "把顯示卡記憶體吃爆、Premiere 會卡死,所以沒有動手。" + MIXER_HINT);
-        } else if (r === "NOFX") {
-          done(false, "Premiere 效果清單裡找不到「" + name + "」。" + MIXER_HINT);
+            + "一個一個掛會產生好幾千個效果實例,時間軸會變得很頓,"
+            + "所以沒有動手。" + MIXER_HINT);
+        } else if (r && r.indexOf("NOFX") === 0) {
+          // 效果名稱會跟著 Premiere 的介面語言翻譯,對不上就把這台實際有的
+          // 名稱印到訊息區,才看得出是名字不同還是真的沒這個效果
+          var miss = String(r.substring(4) || "").split("|").join("、");
+          cs.evalScript("prListAudioEffects()", function (list) {
+            if (list && list.indexOf("OK ") === 0) {
+              appendLog("\n這台 Premiere 有的音訊效果:\n"
+                + list.substring(3).split("|").join("、") + "\n");
+            }
+            done(false, "在你的 Premiere 裡找不到這些效果:" + miss
+              + "(效果名稱會跟著介面語言不同)。可用的效果清單已印在下方訊息區,"
+              + "把正確的名字填進設定的 PREMIERE_VOICE_FX 就會認得。" + MIXER_HINT);
+          });
         } else {
           done(false, "掛效果失敗:" + r + " " + MIXER_HINT);
         }
@@ -1059,9 +1093,9 @@
 
   $("applyVst").addEventListener("click", function () {
     setAfterButtons(false);
-    afterSay("嘗試把降噪掛到目前序列…", true);
     withValues(function (v) {
-      applyDenoise(v, function (ok, msg) {
+      afterSay("嘗試把人聲處理掛到目前序列(" + fxLabelsOf(v) + ")…", true);
+      applyVoiceFx(v, function (ok, msg) {
         afterSay(msg, ok);
         setAfterButtons(true);
       });
@@ -1069,19 +1103,20 @@
   });
 
   // ---------- 剪完之後自動接手的事 ----------
-  // 兩件本來都要你手動按的事:打開報告、把降噪掛上去。
-  // 降噪只有在「沒烘進音檔」時才需要掛 —— 那種情況下新序列是原始聲音,
-  // 不掛等於沒降噪,而每剪一次就要手動按一次實在很煩。
+  // 兩件本來都要你手動按的事:打開報告、把人聲處理掛上去。
+  // 人聲處理只有在「沒烘進音檔」時才需要掛 —— 那種情況下新序列是原始聲音,
+  // 不掛等於沒處理,而每剪一次就要手動按一次實在很煩。
   function runAutoSteps(video, say) {
     withValues(function (v) {
       if (!v) return;
       if (v.AUTO_OPEN_REPORT !== false) openReportFor(video, true);
 
-      // 降噪沒烘進音檔時,新序列聽到的是原始錄音 —— 提醒你掛一次。
-      // 刻意「不」自動掛:那是每片段一個實例,會把顯示卡記憶體吃爆。
-      var wantsDenoise = v.AUDIO_MODE === "vst" && v.VST_BAKE === false
-        && v.VST_CHAIN && v.VST_CHAIN.length;
-      if (wantsDenoise) say(";尚未降噪 —— " + MIXER_HINT, true);
+      // 沒烘進音檔時,新序列聽到的是原始錄音 —— 提醒你掛一次。
+      // 判斷只看「有沒有烘進去」:要掛什麼是 Premiere 那邊的事,
+      // 跟設定裡有沒有填 VST 路徑無關(預設根本不用 VST,用內建效果)。
+      // 刻意「不」自動掛:那是每片段一組,片段一多時間軸會變頓。
+      var wantsVoiceFx = v.AUDIO_MODE === "vst" && v.VST_BAKE === false;
+      if (wantsVoiceFx) say(";聲音還沒處理 —— " + MIXER_HINT, true);
     });
   }
 
