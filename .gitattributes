@@ -1,0 +1,28 @@
+# 換行字元怎麼存。
+#
+# 沒有這個檔的話,每次 commit 都會噴一整片
+# 「LF will be replaced by CRLF」的警告,把真正該看的訊息淹掉。
+#
+# 規則:版本庫裡一律存 LF,checkout 到 Windows 時交給 Git 處理。
+# 但有兩種檔案例外,而且是踩過坑的:
+#   .bat  中文版 cmd 對換行很敏感,而且這些檔必須是純 ASCII
+#   .ps1  PowerShell 5.1 認 CRLF + UTF-8 BOM;換行不對會出怪事
+# 兩者都強制 CRLF,不讓 Git 自作主張。
+
+* text=auto eol=lf
+
+# --- Windows 原生腳本:一定要 CRLF ---
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.reg text eol=crlf
+
+# --- 二進位檔:不要碰 ---
+*.png binary
+*.jpg binary
+*.ico binary
+*.zip binary
+*.vst3 binary
+*.bin binary
+*.mp4 binary
+*.wav binary
