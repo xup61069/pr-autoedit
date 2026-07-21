@@ -42,12 +42,15 @@
         <div id="formCommon" class="form"></div>
 
         <!-- 教學類型編輯器(按「編輯類型」才展開) -->
-        <div id="vocabEditor" class="vocabed" style="display:none">
+        <!-- 預設收合。收合狀態由 CSS 的 .vocabed 決定、展開時加上 .open,
+             不用 inline style —— inline style 有可能被環境清掉,
+             那樣一開面板就是攤開的,反而擋住底下的設定。 -->
+        <div id="vocabEditor" class="vocabed">
           <div class="row">
             <select id="vocabPick"></select>
             <button id="vocabNew" class="btn small ghost">新增類型</button>
           </div>
-          <textarea id="vocabWords" rows="7" spellcheck="false"
+          <textarea id="vocabWords" rows="4" spellcheck="false"
             placeholder="一行一個詞,或用頓號、逗號分隔"></textarea>
           <div id="vocabBudget" class="budget"></div>
           <div class="row">
@@ -57,10 +60,9 @@
             <span id="vocabMsg" class="savemsg"></span>
           </div>
           <div class="hint">
-            <b>只收「真的會被聽錯」的詞。</b>提示詞長度有硬上限,
-            收太多會把重要的術語擠掉——像「喇叭」「高頻」這種本來就聽得對的,
-            收進來只是浪費額度。改動存在 <code>config\vocab_local.json</code>,
-            更新專案不會被蓋掉。
+            <b>只收「真的會被聽錯」的詞。</b>額度有硬上限,收太多會把重要的擠掉
+            ——「喇叭」「高頻」這種本來就聽得對,收了只是浪費。
+            改動存在 <code>config\vocab_local.json</code>,更新專案不會被蓋掉。
           </div>
         </div>
         <div class="row">

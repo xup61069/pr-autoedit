@@ -326,6 +326,10 @@
   }
 
   function renderForm() {
+    // 教學類型編輯器是「搬」到類型欄位底下的(才會就近出現,不用捲到最下面),
+    // 所以重畫表單前要先把它移回安全的地方 —— 不然下一行的 innerHTML=""
+    // 會把它連同裡面的按鈕一起清掉,之後就再也叫不出來。
+    $("settingsBody").appendChild($("vocabEditor"));
     $("formCommon").innerHTML = "";
     $("formAdvanced").innerHTML = "";
     controls = {};
@@ -564,9 +568,10 @@
       // 「編輯類型」:內建詞庫不見得剛好收到你常講的詞,讓你自己改、自己開新類型
       var edit = document.createElement("span");
       edit.className = "cat edit";
-      edit.textContent = "✎ 編輯類型";
       edit.addEventListener("click", toggleVocabEditor);
       input.appendChild(edit);
+      vocabChip = edit;
+      syncVocabChip(vocabEditorOpen());
       controls[f.key] = function () { return picked.slice(); };
     }
 
@@ -577,6 +582,9 @@
       h.className = "fhint"; h.textContent = f.hint;
       wrap.appendChild(h);
     }
+    // 編輯器就近放在類型晶片底下:展開時一眼就看得到,
+    // 不會像放在表單最後面那樣「按了好像沒反應」(其實是開在螢幕外)。
+    if (f.type === "category") wrap.appendChild($("vocabEditor"));
     return wrap;
   }
 
@@ -666,18 +674,42 @@
     vocabSay("");
   }
 
-  function toggleVocabEditor() {
+  // 「編輯類型」那顆晶片要看得出來現在是開還是關 —— 不然使用者按了之後
+  // 會不確定到底有沒有反應(尤其編輯器展開在下面、被其他欄位擠出視線時)。
+  var vocabChip = null;
+  function syncVocabChip(open) {
+    if (!vocabChip) return;
+    vocabChip.textContent = open ? "▾ 收起編輯" : "✎ 編輯類型";
+    if (open) vocabChip.classList.add("open");
+    else vocabChip.classList.remove("open");
+  }
+
+  function vocabEditorOpen() {
+    return $("vocabEditor").className.indexOf("open") >= 0;
+  }
+
+  function setVocabEditorOpen(open) {
     var box = $("vocabEditor");
-    if (!settingsData) return;
-    if (box.style.display === "none") {
-      box.style.display = "";
-      var cur = (controls["VOCAB_CATEGORIES"] ?
-        controls["VOCAB_CATEGORIES"]() : [])[0];
-      fillVocabPicker(cur);
-      loadVocabInto($("vocabPick").value);
-    } else {
-      box.style.display = "none";
+    if (open) box.classList.add("open");
+    else box.classList.remove("open");
+    syncVocabChip(open);
+  }
+
+  // 回傳「切換後是不是展開狀態」,讓晶片文字跟著同步
+  function toggleVocabEditor() {
+    if (!settingsData) return false;
+    if (vocabEditorOpen()) {
+      setVocabEditorOpen(false);
+      return false;
     }
+    setVocabEditorOpen(true);
+    var cur = (controls["VOCAB_CATEGORIES"] ?
+      controls["VOCAB_CATEGORIES"]() : [])[0];
+    fillVocabPicker(cur);
+    loadVocabInto($("vocabPick").value);
+    // 展開在畫面外等於沒展開,捲進來讓它一定看得到
+    try { $("vocabEditor").scrollIntoView({ block: "nearest" }); } catch (e) {}
+    return true;
   }
 
   $("vocabPick").addEventListener("change", function () {
@@ -717,7 +749,7 @@
     if ((settingsData.categories_available || []).indexOf(name) < 0) {
       settingsData.categories_available.push(name);
       renderForm();                 // 新類型要在晶片列出現
-      $("vocabEditor").style.display = "";
+      setVocabEditorOpen(true);     // renderForm 會重畫晶片,重新開回來
       fillVocabPicker(name);
     }
     vocabSay("已儲存「" + name + "」(" + words.length + " 個詞)"
@@ -759,7 +791,7 @@
         return n !== name;
       });
     renderForm();
-    $("vocabEditor").style.display = "";
+    setVocabEditorOpen(true);
     fillVocabPicker();
     loadVocabInto($("vocabPick").value);
     vocabSay("已刪除「" + name + "」", true);
