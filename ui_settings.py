@@ -15,7 +15,10 @@ config/settings_local.json(見 config/settings.py 尾端的 JSON 覆寫),
   type     控制項型別:
              select(下拉,配 options) / number(數字滑條,配 min/max/step) /
              bool(勾選) / list(逗號分隔清單) / category(教學類型複選) /
-             vstlist(VST 檔路徑清單) / combo(可打字下拉,配 options)
+             vstlist(VST 檔路徑清單)
+           註:不要加「可打字下拉」那種型別。它得靠 <datalist>,
+           而那個元素在 CEP 的舊瀏覽器核心不可靠(實測會整個不顯示),
+           下拉是空的而且看不出原因。要打字就用 list,要選就用 select。
   tier     common=基本頁 / advanced=進階頁
   group    同一頁裡的分組標題(進階頁的分組預設折疊,見 COLLAPSED_GROUPS)
   hint     欄位下方的白話說明

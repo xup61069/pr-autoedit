@@ -34,6 +34,26 @@ from modules.workspace import wpath, prepare as prepare_workspace, tidy
 import config.settings as cfg
 
 
+def require_ffmpeg() -> None:
+    """確認 ffmpeg / ffprobe 真的裝了,而且是在做任何事之前就確認。
+
+    這是整條管線第一個碰外部工具的地方。沒有這一步的話,沒裝 ffmpeg 的人
+    看到的是 Python 的 FileNotFoundError traceback —— 對零程式基礎的人
+    等於沒有訊息。面板有錯誤翻譯表接得住,但直接跑命令列的人沒有。"""
+    for exe in ("ffmpeg", "ffprobe"):
+        try:
+            subprocess.run([exe, "-version"], capture_output=True, check=True)
+        except (FileNotFoundError, OSError):
+            sys.exit(
+                f"找不到 {exe},沒辦法處理影音。\n"
+                "  它不是 Python 套件,要另外裝並加進系統 PATH。\n"
+                "  最快的裝法(用系統管理員身分開命令列):\n"
+                "      winget install Gyan.FFmpeg\n"
+                "  裝完要把命令列(或 Premiere)關掉重開,才吃得到新的 PATH。")
+        except subprocess.CalledProcessError:
+            pass          # 裝了但回非 0,不常見,交給後面的步驟去報真正的問題
+
+
 def has_audio(video_path: str) -> bool:
     """檢查影片有沒有音軌(沒有的話後續轉錄、剪輯都無從做起)"""
     out = subprocess.run([
@@ -112,6 +132,8 @@ def main():
 
     if not os.path.exists(args.video):
         sys.exit(f"找不到檔案:{args.video}")
+
+    require_ffmpeg()
 
     if not has_audio(args.video):
         sys.exit("這支影片沒有音軌,無法處理。\n"

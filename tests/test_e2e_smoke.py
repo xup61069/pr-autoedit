@@ -362,7 +362,9 @@ def test_panel_dump_is_valid():
                 "vocab_presets", "builtin_vocab", "vocab_budget"):
         assert key in data, f"dump 少了「{key}」,面板會拿不到東西"
     # 每個欄位都要有面板畫得出來的型別,而且值要真的存在
-    known = {"select", "number", "bool", "list", "category", "vstlist", "combo"}
+    # 面板實際畫得出來的型別。刻意不含「可打字下拉」——它得靠 <datalist>,
+    # 那個元素在 CEP 的舊瀏覽器核心不可靠,下拉會是空的而且看不出原因。
+    known = {"select", "number", "bool", "list", "category", "vstlist"}
     for f in data["fields"]:
         assert f["type"] in known, f"欄位「{f['key']}」的型別 {f['type']} 面板不認得"
         assert f["key"] in data["values"], f"欄位「{f['key']}」沒有對應的值"

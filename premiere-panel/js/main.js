@@ -525,18 +525,11 @@
       input.appendChild(range); input.appendChild(num);
       controls[f.key] = function () { return clampNum(num.value); };
 
-    } else if (f.type === "combo") {
-      input = document.createElement("input");
-      input.type = "text";
-      input.setAttribute("list", "dl_" + f.key);
-      input.value = value;
-      var dl = document.createElement("datalist");
-      dl.id = "dl_" + f.key;
-      (f.options || []).forEach(function (o) {
-        var op = document.createElement("option"); op.value = o; dl.appendChild(op);
-      });
-      wrap.appendChild(dl);
-      controls[f.key] = function () { return input.value.trim(); };
+    // 註:以前這裡還有一個 "combo"(可打字下拉)型別,沒有任何欄位在用,
+    // 而它是拿 <datalist> 做的 —— 那個元素在 CEP 的舊瀏覽器核心不可靠
+    // (實測會整個不顯示)。留著等於埋一個陷阱給下一個加欄位的人:
+    // 他看到有這個型別就會用,然後花很久查「為什麼下拉是空的」。
+    // 要可打字的欄位請用 list 或 select。
 
     } else if (f.type === "list") {
       input = document.createElement("input");

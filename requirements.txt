@@ -1,25 +1,26 @@
+# ============================================================
 # 核心(一定要裝)
-faster-whisper>=1.0.0
-lxml>=5.0.0
-auto-editor>=24.0.0
-numpy>=1.24.0        # 音樂/音效偵測(modules/audio_probe.py)用
+# ============================================================
+faster-whisper>=1.0.0            # 語音辨識
+lxml>=5.0.0                      # 產 Premiere XML
+auto-editor>=24.0.0              # 剪輯引擎(baked 模式)
+numpy>=1.24.0                    # 音量與畫面分析
+soundfile>=0.12.0                # 讀寫 WAV(音樂偵測、微剪、快轉抹音都要)
+opencc-python-reimplemented>=0.1.7   # 字幕簡轉繁
+pedalboard>=0.9.0                # 載入 VST 降噪外掛
 
-# 語音辨識 - 替代引擎(選用):FunASR / Paraformer,中文常更準
-# 要用時把 config.ASR_ENGINE 設為 "funasr";首次執行會自動下載模型(約 2GB)
-# pip install funasr
-
-# 音訊清理 - 開源路線(DeepFilterNet)—— 選用,預設不裝
-# 注意:Python 3.13 目前沒有現成安裝包,需先裝 Rust 才能編譯。
-# 這是「免費降噪」的備援路線;若你走 VST 路線(pedalboard)可不裝。
-# 要用的話,先裝 Rust(https://rustup.rs/)再手動執行:
-#   pip install deepfilternet
-soundfile>=0.12.0
-
-# 音訊清理 - VST 路線(載入你現有的外掛)
-pedalboard>=0.9.0
-
-# 字幕簡轉繁
-opencc-python-reimplemented>=0.1.7
+# ============================================================
+# 選用(預設不裝,要用再自己裝)
+# ============================================================
+# FunASR / Paraformer —— 替代辨識引擎。純中文內容可試;中英夾雜實測不如
+# Whisper(F6 會變「f六」、MIDI 會變「谜dy」),所以不是預設。
+# 要用的話把面板的「辨識引擎」改成 funasr,首次執行自動下載模型(約 2GB):
+#   pip install funasr
+#
+# DeepFilterNet —— 免費降噪的備援路線(AUDIO_MODE="opensource" 才用得到)。
+# ⚠️ Python 3.13 沒有現成安裝包,要先裝 Rust 編譯器才裝得起來。
+# 走 VST 路線(pedalboard,上面已經裝了)或用 Premiere 內建效果的話不需要它:
+#   先裝 Rust(https://rustup.rs/),再 pip install deepfilternet
 
 # 注意:
 # 1. torch 要另外裝 CUDA 版本(見 SETUP.md),不要用 pip 預設的 CPU 版
