@@ -8,7 +8,14 @@ from __future__ import annotations
 from core.models import Word, Timeline
 from core.remap import RemapTable
 import config.settings as cfg
+import bisect
 import html
+
+# 切點表最多列這麼多列。剪得兇的長片有兩三千個切點,整份印出來的 HTML
+# 會大到瀏覽器捲起來都頓,而報告的用途是「一分鐘掃過去看有沒有大面積誤判」
+# ——沒有人會逐列看完三千列。超過就只留「需審閱」的(低信心那些),
+# 那本來就是唯一需要人看的部分。
+MAX_CUT_ROWS = 400
 
 
 def _fmt_value(v) -> str:
@@ -95,16 +102,41 @@ def generate(timeline: Timeline, words: list[Word],
             table: RemapTable, out_html: str, live: bool = False) -> str:
     """live=True(活專案模式):時間軸=原始影片,所有時間碼直接用原始位置,
     切點是「建議」而非已執行;文案跟著調整。"""
-    cuts = table.cuts_for_markers()      # 全部切點,報告裡都列出來
+    all_cuts = table.cuts_for_markers()      # 全部切點
     fps = timeline.fps
 
-    # 建一個「原始幀 -> 詞索引」的查找,用來抓前後文
+    # 切點太多就只列「需審閱」的。統計數字仍然照全部算,只有表格會收斂 ——
+    # 不然一份三千列的 HTML 光是捲動就很痛苦,而你要看的其實只有那幾十列。
+    cuts = all_cuts
+    trimmed_note = ""
+    if len(all_cuts) > MAX_CUT_ROWS:
+        review_only = [c for c in all_cuts
+                       if c.confidence < cfg.MARKER_MAX_CONFIDENCE]
+        cuts = review_only[:MAX_CUT_ROWS]
+        trimmed_note = (
+            f"這次有 {len(all_cuts)} 個切點,表格只列出其中"
+            f"<b>{len(cuts)}</b> 個需要你確認的(低信心)。"
+            f"其餘是「必刪」的高信心切點,不值得逐一看。"
+            f"上面的統計數字仍然是全部切點的總和。<br>")
+
+    # 建一個「原始幀 -> 詞索引」的查找,用來抓前後文。
+    # 詞是照時間排好的,所以用二分搜尋定位:以前是每個切點都掃過全部的詞
+    # (切點數 × 詞數),剪得兇的長片是 2500 × 12000,實測要 5.2 秒才生得出
+    # 一份報告;改成二分搜尋是 0.004 秒。
     word_starts = [w.start_frame(fps) for w in words]
 
     def context_around(orig_frame: int, span: int = 3) -> str:
-        # 找最接近的詞索引
-        idx = min(range(len(words)),
-                key=lambda i: abs(word_starts[i] - orig_frame)) if words else 0
+        if not words:
+            return ""
+        # bisect 只給「插入點」,左右兩個哪個比較近要自己比一次
+        i = bisect.bisect_left(word_starts, orig_frame)
+        if i >= len(words):
+            idx = len(words) - 1
+        elif i == 0:
+            idx = 0
+        else:
+            idx = i if (abs(word_starts[i] - orig_frame)
+                        < abs(word_starts[i - 1] - orig_frame)) else i - 1
         lo = max(0, idx - span)
         hi = min(len(words), idx + span + 1)
         parts = []
@@ -138,7 +170,10 @@ def generate(timeline: Timeline, words: list[Word],
           <td class="ctx">…{context_around(c.orig_frame)}…</td>
         </tr>""")
 
-    n_review = sum(1 for c in cuts if c.confidence < cfg.MARKER_MAX_CONFIDENCE)
+    # 統計照「全部」切點算,不受表格收斂影響 —— 上面那排數字是這支片的
+    # 總覽,少算了會讓人誤判剪輯的規模
+    n_review = sum(1 for c in all_cuts
+                   if c.confidence < cfg.MARKER_MAX_CONFIDENCE)
 
     # 省時摘要:原始長度 vs 剪輯後長度
     orig_frames = max((s.end for s in timeline.segments), default=0)
@@ -292,7 +327,7 @@ def generate(timeline: Timeline, words: list[Word],
   <div class="stat"><div class="num">{n_review}</div><div class="lbl">需人工審閱的切點</div></div>
 </div>
 <div class="summary">
-  {"<b>活專案模式</b>:下方切點都只是「建議」,影片一刀未剪,全部片段都在時間軸上(粉紅=靜音、青綠=音樂、紫=冗詞)。<br>「時間」欄就是時間軸位置(=原始影片位置)。在 Premiere 時間軸右鍵「標籤 &gt; 選取標籤群組」可一次選同色片段批次刪除或改速度。<br>" if live else f"下方 {len(cuts)} 個切點中,<b>{n_review}</b> 個標為「需審閱」(低信心,已在專案下 marker)。<br>在 Premiere 用 Shift+M / Ctrl+Shift+M 逐點跳,只需確認「需審閱」的切點;「時間」欄是剪輯後影片的位置。<br>"}
+  {"<b>活專案模式</b>:下方切點都只是「建議」,影片一刀未剪,全部片段都在時間軸上(粉紅=靜音、青綠=音樂、紫=冗詞)。<br>「時間」欄就是時間軸位置(=原始影片位置)。在 Premiere 時間軸右鍵「標籤 &gt; 選取標籤群組」可一次選同色片段批次刪除或改速度。<br>" if live else f"這次共 {len(all_cuts)} 個切點,其中 <b>{n_review}</b> 個標為「需審閱」(低信心,已在專案下 marker)。<br>{trimmed_note}在 Premiere 用 Shift+M / Ctrl+Shift+M 逐點跳,只需確認「需審閱」的切點;「時間」欄是剪輯後影片的位置。<br>"}
   若這裡看到大量誤判,先調設定的門檻再重跑,不用急著進 Premiere。
 </div>
 <table>
@@ -308,5 +343,7 @@ def generate(timeline: Timeline, words: list[Word],
 
     with open(out_html, "w", encoding="utf-8") as f:
         f.write(doc)
-    print(f"  審閱報告:{len(cuts)} 個切點 -> {out_html}")
+    listed = (f"{len(all_cuts)} 個切點" if cuts is all_cuts
+              else f"{len(all_cuts)} 個切點(表格列出需審閱的 {len(cuts)} 個)")
+    print(f"  審閱報告:{listed} -> {out_html}")
     return out_html

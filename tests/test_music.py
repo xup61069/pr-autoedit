@@ -453,6 +453,40 @@ def test_motion_probe_error_is_readable():
     raise AssertionError("讀不存在的檔案居然沒有失敗")
 
 
+def test_motion_cache_notices_a_different_video():
+    """畫面變化量的快取要認得「這是不是同一支影片」。
+
+    快取以前只記 sample_fps。把同一支片重新輸出一份(改了一段內容、
+    或換個編碼再輸出成同樣的檔名),快取會被當成有效的沿用,
+    畫面判定就是照舊那支片算的 —— 剪出來的東西對不上新影片,
+    而且完全沒有徵兆。"""
+    import json, tempfile, time
+    from modules.video_probe import _video_fingerprint
+
+    d = tempfile.mkdtemp(prefix="motion_cache_")
+    try:
+        video = os.path.join(d, "clip.mp4")
+        with open(video, "wb") as f:
+            f.write(b"x" * 1000)
+        fp1 = _video_fingerprint(video)
+        assert fp1, "指紋不該是空的"
+
+        # 內容變了(重新輸出一份同名影片)-> 指紋要跟著變
+        time.sleep(0.01)
+        with open(video, "wb") as f:
+            f.write(b"y" * 2000)
+        fp2 = _video_fingerprint(video)
+        assert fp1 != fp2, "影片換了內容,指紋卻沒變 -> 舊快取會被誤用"
+
+        # 檔案不見了也不能爆掉(只是快取失效)
+        os.remove(video)
+        assert _video_fingerprint(video) == "", "檔案不存在時應回空字串"
+        print("  ✓ 影片換了內容,畫面快取會失效重算")
+    finally:
+        import shutil
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def test_motion_regions_from_diffs():
     """變化量 -> 區間:超過門檻的連續時段才算,太短的丟掉"""
     from modules.video_probe import motion_regions_from_diffs
@@ -495,5 +529,6 @@ if __name__ == "__main__":
     test_micro_trim_number_is_reported_after_motion()
     test_motion_failure_and_emptiness_are_announced()
     test_motion_probe_error_is_readable()
+    test_motion_cache_notices_a_different_video()
     test_motion_regions_from_diffs()
     print("\n全部通過 ✓  音樂保護、能量微剪、畫面活動判定皆正確。")

@@ -58,6 +58,20 @@ def _sample_frames(video_path: str, sample_fps: float) -> np.ndarray:
     return buf.reshape(n, PROBE_H, PROBE_W)
 
 
+def _video_fingerprint(video_path: str) -> str:
+    """這個快取是「哪一支影片」算出來的。
+
+    快取以前只記 sample_fps,不記影片本身。把同一支片重新輸出一份
+    (改了一段內容、換個編碼再輸出成同樣的檔名),快取會被當成有效的沿用,
+    畫面判定就是照舊那支片算的——剪出來的東西對不上新影片,
+    而且完全沒有徵兆。用檔案大小 + 修改時間就足以分辨。"""
+    try:
+        st = os.stat(video_path)
+        return f"{st.st_size}:{int(st.st_mtime)}"
+    except OSError:
+        return ""
+
+
 def frame_diffs(video_path: str, sample_fps: float,
                 cache_json: str | None = None) -> np.ndarray:
     """每個取樣點的「畫面變化量」(相鄰縮圖的平均亮度差,0~255)。
@@ -65,11 +79,13 @@ def frame_diffs(video_path: str, sample_fps: float,
     掃一支 17 分鐘的 4K 片要 27 秒,所以結果會快取。
     刻意快取「變化量」而不是「判定結果」:調靈敏度時不必重新解碼影片,
     直接拿同一串數字換個門檻算一遍,零秒完成。"""
+    fingerprint = _video_fingerprint(video_path)
     if cache_json and os.path.exists(cache_json):
         try:
             with open(cache_json, "r", encoding="utf-8") as f:
                 raw = json.load(f)
-            if raw.get("sample_fps") == sample_fps:
+            if (raw.get("sample_fps") == sample_fps
+                    and raw.get("video") == fingerprint):
                 return np.asarray(raw.get("diffs", []), dtype=np.float64)
         except (ValueError, OSError):
             pass
@@ -84,7 +100,7 @@ def frame_diffs(video_path: str, sample_fps: float,
     if cache_json:
         try:
             with open(cache_json, "w", encoding="utf-8") as f:
-                json.dump({"sample_fps": sample_fps,
+                json.dump({"sample_fps": sample_fps, "video": fingerprint,
                            "diffs": [round(float(d), 3) for d in diff]}, f)
         except OSError:
             pass

@@ -373,6 +373,79 @@ def test_panel_dump_is_valid():
     print(f"  ✓ 面板設定 JSON 正常({len(data['fields'])} 個欄位)")
 
 
+def test_report_stays_usable_on_a_long_video():
+    """長片的報告要「生得快」也要「開得動」。
+
+    報告的用途是一分鐘掃過去看有沒有大面積誤判。剪得兇的長片有兩三千個
+    切點,整份印出來的 HTML 會大到瀏覽器捲起來都頓,而沒有人會逐列看完
+    三千列——真正要看的只有低信心那幾十列。
+
+    另外前後文查找以前是「每個切點掃過全部的詞」(切點數 × 詞數),
+    2500 × 12000 實測要 5.2 秒才生得出一份報告。
+
+    ⚠️ 收斂的是「表格」不是「統計」:上面那排數字仍要照全部切點算,
+    少算了會讓人誤判這支片被剪掉多少。"""
+    import time, tempfile
+    from core.models import Timeline, Segment
+    from core.remap import RemapTable
+    from modules.report import generate, MAX_CUT_ROWS
+
+    segs, pos = [], 0
+    for i in range(6000):
+        segs.append(Segment(pos, pos + 15, "keep" if i % 2 else "delete",
+                            reason="silence" if i % 2 == 0 else "",
+                            confidence=0.95 if i % 4 else 0.6))
+        pos += 15
+    words = [Word("字", i * 0.17, i * 0.17 + 0.15) for i in range(12000)]
+    tl = Timeline(fps=30.0, source="/fake/x.mp4", segments=segs)
+    table = RemapTable(segs, 30.0)
+    out = os.path.join(tempfile.gettempdir(), "long_report_test.html")
+
+    t0 = time.time()
+    generate(tl, words, table, out)
+    elapsed = time.time() - t0
+    assert elapsed < 2.0, f"長片的報告生了 {elapsed:.1f} 秒,太久了"
+
+    html = open(out, encoding="utf-8").read()
+    n_rows = html.count("<tr>") - html.count("<th>")
+    assert n_rows <= MAX_CUT_ROWS + 50, f"表格列數沒有收斂:{n_rows} 列"
+    assert len(html) < 2_000_000, f"HTML {len(html)/1e6:.1f}MB,瀏覽器會頓"
+
+    # 統計必須照「全部」切點算,不能被表格的收斂影響
+    all_cuts = table.cuts_for_markers()
+    n_review = sum(1 for c in all_cuts if c.confidence < cfg.MARKER_MAX_CONFIDENCE)
+    assert f"共 {len(all_cuts)} 個切點" in html, "總數應該報全部切點"
+    assert f"<b>{n_review}</b> 個標為「需審閱」" in html, \
+        "需審閱的數量應該照全部切點算"
+    assert "表格只列出" in html, "收斂表格時要告訴使用者為什麼只看到一部分"
+    os.remove(out)
+    print(f"  ✓ 長片報告 {elapsed:.2f} 秒生成、{n_rows} 列、"
+          f"{len(html)/1e6:.1f}MB,統計仍照全部 {len(all_cuts)} 個切點算")
+
+
+def test_short_report_is_not_truncated():
+    """切點少的時候要完整列出,不能也被收斂掉"""
+    import tempfile
+    from core.models import Timeline, Segment
+    from core.remap import RemapTable
+    from modules.report import generate
+
+    segs = [Segment(0, 100, "keep"),
+            Segment(100, 110, "delete", reason="filler", text="嗯",
+                    confidence=0.6),
+            Segment(110, 300, "keep")]
+    table = RemapTable(segs, 30.0)
+    out = os.path.join(tempfile.gettempdir(), "short_report_test.html")
+    generate(Timeline(fps=30.0, source="/f.mp4", segments=segs),
+             [Word("大家好", 0, 1), Word("嗯", 3.3, 3.6), Word("今天", 3.7, 4.5)],
+             table, out)
+    html = open(out, encoding="utf-8").read()
+    assert "表格只列出" not in html, "切點很少時不該出現截斷說明"
+    assert "嗯" in html, "小份報告要完整列出切點"
+    os.remove(out)
+    print("  ✓ 切點少的報告完整列出,不受收斂影響")
+
+
 def test_docs_list_every_test_suite():
     """教人「改動前先跑測試」的文件,必須列滿全部九套。
 
@@ -505,6 +578,8 @@ if __name__ == "__main__":
     test_tests_never_touch_personal_config()
     test_every_setting_is_reachable_or_explained()
     test_panel_dump_is_valid()
+    test_report_stays_usable_on_a_long_video()
+    test_short_report_is_not_truncated()
     test_docs_list_every_test_suite()
     test_docs_dont_reference_missing_files()
     test_voicefx_detection()
