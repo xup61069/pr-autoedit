@@ -179,6 +179,31 @@ def test_workspace_tidies_output():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_vocab_has_no_redundancy():
+    """詞庫不能重複收同一串字。
+
+    提示詞的額度是照「字元」算的,而且上限很硬(見 test_prompt_fits_token_budget)。
+    重複有兩種,兩種都是在浪費額度、把真正需要的術語擠出去:
+      1. 同一個詞出現在兩個類型裡(多選時會被去重,但代表分類沒分乾淨);
+      2. 短詞已經整個包在長詞裡面 —— 「遮罩」的字元本來就在「軌道遮罩」中,
+         兩個都收等於同一串字付兩次錢。
+    這兩件事看程式碼很難發現(詞庫是一大片字),所以用測試守著。"""
+    seen, dup = {}, []
+    for cat, words in cfg.VOCAB_PRESETS.items():
+        assert len(words) == len(set(words)), f"「{cat}」自己就有重複的詞"
+        for w in words:
+            if w in seen:
+                dup.append(f"「{w}」同時在 {seen[w]} 和 {cat}")
+            seen[w] = cat
+    assert not dup, "跨類型重複:" + "、".join(dup)
+
+    contained = [f"「{cat}」的「{a}」已經包在「{b}」裡面"
+                 for cat, ws in cfg.VOCAB_PRESETS.items()
+                 for a in ws for b in ws if a != b and a in b]
+    assert not contained, "重複收了同一串字:" + "、".join(contained)
+    print(f"  ✓ {len(cfg.VOCAB_PRESETS)} 類詞庫沒有重複、也沒有包含關係的冗詞")
+
+
 def test_voicefx_detection():
     """自動找 VoiceFX:要找得到、要指到「內層」、沒裝時要乾淨地空著。
 
@@ -223,4 +248,5 @@ if __name__ == "__main__":
     test_prompt_always_demonstrates_punctuation()
     test_prompt_fits_token_budget()
     test_workspace_tidies_output()
+    test_vocab_has_no_redundancy()
     test_voicefx_detection()
