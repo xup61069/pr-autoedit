@@ -130,6 +130,45 @@ function stage4() {
   ok(stopBlock.indexOf("beep(false)") < 0, "停止不會嗶錯誤音");
   ok(stopBlock.indexOf("explainInto()") < 0, "停止不會跳錯誤說明");
   ok(stopBlock.indexOf("return") >= 0, "停止分支會 return,不會掉進失敗分支");
+  stage5();
+}
+
+// --- 5. 每一個「會跑很久的 Python 步驟」都要停得掉 ---
+//
+// 停止鈕只認得 track() 包過的行程。用 cp.execFile 起的步驟不會出現停止鈕,
+// 使用者按了沒反應,跟當掉沒兩樣。這裡逐一檢查三顆會跑 Python 的按鈕。
+// (「用目前序列產生字幕」以前正是用 execFile 起的,而停止鈕旁邊的註解
+//  已經寫著「產字幕也算」——測試沒守住,註解就變成謊話。)
+function stage5() {
+  // 每一項:[給人看的名字, 該按鈕處理函式裡一定會出現的字串]
+  const longRunning = [
+    ["一鍵自動剪輯", "\"pipeline.py\", selectedVideo"],
+    ["重算剪輯", "\"--skip-audio\", \"--stamp\""],
+    ["用目前序列產生字幕", "\"modules.live_subs\""]
+  ];
+
+  longRunning.forEach(function (item) {
+    const label = item[0], needle = item[1];
+    const i = src.indexOf(needle);
+    ok(i >= 0, label + ":在 main.js 裡找得到這個步驟");
+
+    // 往前找最近的行程建立方式,確認它是 track(cp.spawn(...)) 而不是 execFile
+    const before = src.slice(Math.max(0, i - 400), i);
+    const spawnAt = before.lastIndexOf("cp.spawn");
+    const execAt = before.lastIndexOf("cp.execFile");
+    ok(spawnAt > execAt,
+      label + ":用 cp.spawn 起(execFile 沒有 pid 可以收行程樹)");
+    ok(before.lastIndexOf("track(") > execAt,
+      label + ":有經過 track(),停止鈕才會出現、也才停得掉");
+
+    // 它的 close 處理裡,停止判斷要排在離開碼判斷前面
+    const after = src.slice(i, i + 2500);
+    const iStop = after.indexOf("if (stopping)");
+    const iFail = after.indexOf("if (code !== 0)");
+    ok(iStop >= 0, label + ":close 時有分辨使用者按了停止");
+    ok(iFail < 0 || iStop < iFail,
+      label + ":「已停止」判斷排在「失敗」判斷前面");
+  });
 
   console.log("\n全部通過 ✓  停止邏輯正確(共 " + passed + " 項)。");
 }

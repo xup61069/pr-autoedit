@@ -1044,7 +1044,10 @@
   });
 
   // ---------- 停止 ----------
-  // 停掉正在跑的那一個(一鍵剪輯、重算、產字幕都算)。
+  // 停掉正在跑的那一個。凡是會跑比較久的 Python 步驟都要經過 track():
+  // 一鍵剪輯、重算剪輯、用目前序列產生字幕 —— 三個都算。
+  // (產字幕以前是用 execFile 起的,沒有 track,停止鈕根本不會出現,
+  //  而這行註解卻已經寫著「產字幕也算」了。註解說謊比沒有註解更糟。)
   // 按鈕先鎖住:taskkill 收整棵樹要一點時間,連按只會讓人以為沒反應。
   $("stop").addEventListener("click", function () {
     if (!running) return;
@@ -1430,11 +1433,28 @@
       }
       afterSay("依序列版面對位字幕中…", true);
       appendLog("▶ 字幕對位已啟動…\n");
-      cp.execFile(PYTHON, ["-u", "-m", "modules.live_subs", layout, outDir],
-        { cwd: PROJECT_DIR, maxBuffer: 4 * 1024 * 1024 },
-        function (err, stdout, stderr) {
-          appendLog(String(stdout || "") + String(stderr || ""));
-          if (err) {
+      // 用 spawn + track 而不是 execFile:track 才會讓「停止」鈕出現、
+      // 也才停得掉。長片的字幕對位要跑一陣子,按了停止卻沒反應
+      // 跟當掉沒兩樣(以前這裡是 execFile,停止鈕根本不會出現,
+      // 而旁邊的註解還寫著「產字幕也算」)。
+      var proc = track(cp.spawn(PYTHON,
+        ["-u", "-m", "modules.live_subs", layout, outDir],
+        { cwd: PROJECT_DIR }));
+      proc.stdout.on("data", function (d) { appendLog(d.toString()); });
+      proc.stderr.on("data", function (d) { appendLog(d.toString()); });
+      proc.on("error", function (e) {
+        afterSay("無法啟動 Python,詳見下方訊息", false);
+        appendLog(pythonFailMsg(e) + "\n");
+        setAfterButtons(true);
+      });
+      proc.on("close", function (code) {
+          // 停止分支一定要排在離開碼判斷「前面」:被 taskkill 收掉的行程
+          // 離開碼也不是 0,不先分辨就會把「使用者按停止」報成失敗
+          if (stopping) {
+            afterSay("已停止,字幕沒有重新產生(原本的還在)", true);
+            setAfterButtons(true); return;
+          }
+          if (code !== 0) {
             afterSay("字幕對位失敗,說明在下方", false);
             explainInto();
             setAfterButtons(true); return;
@@ -1449,7 +1469,7 @@
             } else { afterSay("字幕產好了,但匯入出錯:" + r2, false); }
             setAfterButtons(true);
           });
-        });
+      });
     });
   });
 })();
