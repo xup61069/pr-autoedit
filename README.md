@@ -102,7 +102,7 @@ python pipeline.py 你的影片.mp4
 - `SILENCE_THRESHOLD_SEC` / `SILENCE_ACTION` / `SILENCE_SPEED_FACTOR` —— 停頓多久算靜音、要快轉還是剪掉、快轉幾倍
 - `MUSIC_DETECT` / `MUSIC_DB_ABOVE_FLOOR` —— 音樂保護開關與靈敏度
 - `ASR_ENGINE` —— 辨識引擎:`faster-whisper`(預設,中英夾雜較好)或 `funasr`(純中文備選)
-- `AUDIO_MODE` / `VST_CHAIN` / `VST_BAKE` —— VST 外掛路徑;降噪要不要烘進音檔(預設不烘)
+- `AUDIO_MODE` / `VST_CHAIN` / `VST_BAKE` —— VST 外掛路徑(預設自動找 VoiceFX);降噪要不要烘進音檔(預設不烘)
 - `DELIVERY_MODE` —— baked / live(見上)
 
 > **個人設定不會被更新覆蓋**:面板存的設定寫在 `config/settings_local.json`,

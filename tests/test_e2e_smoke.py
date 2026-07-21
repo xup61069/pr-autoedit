@@ -179,8 +179,48 @@ def test_workspace_tidies_output():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_voicefx_detection():
+    """自動找 VoiceFX:要找得到、要指到「內層」、沒裝時要乾淨地空著。
+
+    這裡守的是兩個都會靜靜壞掉的情況:
+      1. 有人把它「簡化」成回傳外層資料夾 —— VST3 外層只是個殼,
+         pedalboard 載不動,但要跑到真的降噪那一步才會爆。
+      2. 沒裝外掛的人拿到一條指向不存在檔案的路徑(以前寫死路徑就是這樣,
+         別人抓下來永遠是壞的,而且從畫面上看不出來)。"""
+    import tempfile, shutil
+    from config.settings import _find_voicefx
+
+    d = tempfile.mkdtemp(prefix="vst_test_")
+    old = os.environ.get("PROGRAMFILES"), os.environ.get("LOCALAPPDATA")
+    try:
+        os.environ["PROGRAMFILES"] = d
+        os.environ["LOCALAPPDATA"] = d
+
+        # 沒裝:空清單,不能亂猜一條路徑出來
+        assert _find_voicefx() == [], "沒裝外掛時應該是空清單"
+
+        # 裝了(收在廠商子資料夾裡,VoiceFX 實際就是這樣裝的)
+        bundle = os.path.join(d, "Common Files", "VST3", "TonPlugIns",
+                              "VoiceFX.vst3", "Contents", "x86_64-win")
+        os.makedirs(bundle)
+        inner = os.path.join(bundle, "VoiceFX.vst3")
+        open(inner, "wb").close()
+        found = _find_voicefx()
+        assert found == [inner], f"沒找到內層的 .vst3,拿到的是 {found}"
+        assert os.path.isfile(found[0]), "找到的必須是檔案,不是外層資料夾"
+        print("  ✓ VoiceFX 自動偵測:找得到、指到內層檔案、沒裝時空著")
+    finally:
+        for k, v in zip(("PROGRAMFILES", "LOCALAPPDATA"), old):
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        shutil.rmtree(d, ignore_errors=True)
+
+
 if __name__ == "__main__":
     main()
     test_prompt_always_demonstrates_punctuation()
     test_prompt_fits_token_budget()
     test_workspace_tidies_output()
+    test_voicefx_detection()

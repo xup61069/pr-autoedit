@@ -293,12 +293,44 @@ AUDIO_MODE = "vst"
 #           之後在 Premiere 裡改不了。
 VST_BAKE = False
 
-# VST 模式:你的 .vst3 檔案路徑,依序套用(降噪->EQ->壓縮->limiter)
-VST_CHAIN = [
-    # NVIDIA AI 降噪。注意:這個外掛要指到「內層」的 .vst3 檔,不是外層資料夾
-    r"C:\Program Files\Common Files\VST3\TonPlugIns\VoiceFX.vst3\Contents\x86_64-win\VoiceFX.vst3",
-    # 之後想加 EQ / 壓縮,再把 .vst3 路徑接在這後面
-]
+def _find_voicefx() -> list[str]:
+    """到標準 VST3 資料夾裡找 VoiceFX(NVIDIA AI 降噪),找到就回傳它的路徑。
+
+    以前這裡是直接寫死一條路徑,但那是「開發這支程式的機器」上的位置——
+    別人抓下來就是壞的,而且從畫面上看不出來哪裡錯。改成自動找,
+    裝在哪個廠商子資料夾都認得,沒裝的人則是乾淨的空清單。
+
+    注意要回傳「內層」那顆 .vst3 檔:VST3 的外層其實是個資料夾殼,
+    指到外層載不起來——這是實測踩過的坑。
+    """
+    import os
+    roots = [
+        os.path.join(os.environ.get("PROGRAMFILES", r"C:\Program Files"),
+                     "Common Files", "VST3"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""),
+                     "Programs", "Common", "VST3"),
+    ]
+    for root in roots:
+        if not root or not os.path.isdir(root):
+            continue
+        # 外掛可能直接放在 VST3 根目錄,也可能收在廠商子資料夾(例如 TonPlugIns/)
+        try:
+            folders = [root] + [os.path.join(root, d) for d in os.listdir(root)]
+        except OSError:
+            continue
+        for d in folders:
+            inner = os.path.join(d, "VoiceFX.vst3",
+                                 "Contents", "x86_64-win", "VoiceFX.vst3")
+            if os.path.isfile(inner):
+                return [inner]
+    return []
+
+
+# VST 模式:你的 .vst3 檔案路徑,依序套用(降噪->EQ->壓縮->limiter)。
+# 預設自動去找 VoiceFX,所以裝了的人不用設定;沒裝或想換別的外掛,
+# 在面板「VST 外掛路徑」自己指定即可(面板只會存跟預設不同的值)。
+# 之後想加 EQ / 壓縮,再把 .vst3 路徑接在後面。
+VST_CHAIN = _find_voicefx()
 
 # VoiceFX(NVIDIA AI 降噪)的兩個參數,直接用面板滑條/下拉控制,不必開外掛視窗。
 # 只有當 VST_CHAIN 裡有 VoiceFX 這類外掛時才有作用;其他外掛沒有這兩個參數會自動略過。

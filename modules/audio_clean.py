@@ -99,7 +99,13 @@ def clean_vst(in_wav: str, out_wav: str) -> str:
 
     if not cfg.VST_CHAIN:
         raise RuntimeError(
-            "config.VST_CHAIN 是空的。請在 settings.py 填入你的 .vst3 路徑。")
+            "你勾了「降噪烘進音檔」,但沒有指定降噪外掛,所以沒東西可以處理。\n"
+            "  三選一:\n"
+            "    1. 面板 > 進階 > VST 外掛路徑,選你的 .vst3 檔\n"
+            "       (VST3 的外層是資料夾殼,要點進去選裡面那顆 .vst3)\n"
+            "    2. 取消勾選「降噪烘進音檔」,改在 Premiere 的音軌混音器\n"
+            "       對 A1 軌掛降噪(建議做法,隨時可調可關)\n"
+            "    3. 把「聲音處理方式」改成 none,先不做降噪")
 
     print(f"  載入 {len(cfg.VST_CHAIN)} 個 VST 外掛並處理...")
     # 外掛載入與處理都包在 _suppress_native_output 裡,壓掉底層除錯訊息
