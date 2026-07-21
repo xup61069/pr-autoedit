@@ -11,6 +11,7 @@
 """
 
 from __future__ import annotations
+import bisect
 from dataclasses import dataclass
 from typing import Optional
 from .models import Segment, Word, Cut, SubtitleLine
@@ -58,6 +59,38 @@ class RemapTable:
             timeline_pos += round(s.duration / factor)
 
         self._total_frames = timeline_pos
+        self._index()
+
+    # -----------------------------------------------------------------
+    # 查找索引
+    # -----------------------------------------------------------------
+    def _index(self) -> None:
+        """建一份「每一列的原始起點」清單,給二分搜尋定位用。
+
+        為什麼需要:map_frame / map_span 原本是從第一列開始線性掃到底,
+        而 build_subtitles 會對「每一個詞」呼叫一次 —— 也就是
+        詞數 × 片段數。剪得兇的長片兩邊都是上萬,實測 12000 詞 × 7000 片段
+        要 6.8 秒,而且片長翻倍時間會變四倍(是整條管線裡擴展性最差的一段)。
+
+        映射表天生就是照原始時間排好的(_build 依序走過 segments,
+        from_spans 也依 timeline 位置排序),所以直接二分搜尋就好。
+        這裡順便驗一次有序,以防日後有人塞進沒排序的資料 —— 那樣二分搜尋
+        會安靜地找錯位置,字幕會對到錯的地方而且完全看不出來。"""
+        self._starts = [sp.orig_start for sp in self._spans]
+        for a, b in zip(self._starts, self._starts[1:]):
+            if b < a:
+                raise ValueError(
+                    "映射表的區間沒有照原始時間排序,查找會出錯。"
+                    "建表前請先把 segments/spans 排好。")
+
+    def _first_span_at_or_after(self, orig_frame: int) -> int:
+        """第一個「有可能涵蓋 orig_frame」的列索引。
+
+        往前退一格是必要的:二分搜尋找的是 orig_start,而 orig_frame 很可能
+        落在「前一列的中間」(那一列的 orig_start 比它小)。不退這一格,
+        每個詞的開頭都會被判成落在刪除段裡,字幕會整片消失。"""
+        i = bisect.bisect_right(self._starts, orig_frame)
+        return max(0, i - 1)
 
     # -----------------------------------------------------------------
     # 替代建構式:直接用「原始區間 -> 時間軸位置」清單建表
@@ -78,6 +111,11 @@ class RemapTable:
         t._total_frames = max(
             (sp.timeline_start + round((sp.orig_end - sp.orig_start) / sp.factor)
              for sp in t._spans), default=0)
+        # 使用者可能在 Premiere 裡把片段搬過順序,所以這裡照「原始位置」
+        # 重新排一次再建索引 —— 二分搜尋要的是原始時間有序,
+        # 跟片段在時間軸上的先後無關。
+        t._spans.sort(key=lambda sp: sp.orig_start)
+        t._index()
         return t
 
     # -----------------------------------------------------------------
@@ -85,7 +123,11 @@ class RemapTable:
     # 落在刪除段的回傳 None(代表這個詞被剪掉了)
     # -----------------------------------------------------------------
     def map_frame(self, orig_frame: int) -> Optional[int]:
-        for sp in self._spans:
+        # 從二分搜尋定位的那一列開始找。區間彼此不重疊,所以
+        # 一旦某一列的起點已經超過 orig_frame,後面的只會更遠,可以收工。
+        for sp in self._spans[self._first_span_at_or_after(orig_frame):]:
+            if sp.orig_start > orig_frame:
+                break
             if sp.orig_start <= orig_frame < sp.orig_end:
                 offset = orig_frame - sp.orig_start
                 return sp.timeline_start + round(offset / sp.factor)
@@ -102,7 +144,10 @@ class RemapTable:
         那樣會把「其實還聽得到」的詞整個丟掉,字幕就會莫名其妙缺字。
         改成看「有沒有任何一部分留著」,留著就對到留下來的那一段。"""
         first = last = None
-        for sp in self._spans:
+        for sp in self._spans[self._first_span_at_or_after(orig_start):]:
+            # 區間有序且不重疊:起點已經跑到查詢範圍之後就不必再看下去
+            if sp.orig_start >= orig_end:
+                break
             a = max(orig_start, sp.orig_start)
             b = min(orig_end, sp.orig_end)
             if b <= a:

@@ -265,6 +265,89 @@ def test_punct_keeps_normal_line_limit():
     print("  ✓ 有標點時維持原本的行長設定")
 
 
+def test_lookup_matches_bruteforce_on_random_timelines():
+    """二分搜尋的查找,結果必須跟「從頭掃到底」完全一樣。
+
+    map_frame / map_span 原本是線性掃過所有區間,改成二分搜尋是為了長片的
+    速度(12000 詞 × 7000 片段從 4 秒降到 0.12 秒)。但速度是我在優化的數字,
+    真正該驗的是「有沒有對到不同的位置」——查找錯位的下場是字幕整片對錯地方
+    或整片消失,而這在報告上完全看不出來。
+
+    所以這裡直接留一份「笨方法」實作,用隨機時間軸逐點對照。
+    特別涵蓋容易錯的地方:區間邊界、落在刪除段裡、負數、超過影片結尾。"""
+    import random
+
+    def brute_map_frame(t, f):
+        for sp in t._spans:
+            if sp.orig_start <= f < sp.orig_end:
+                return sp.timeline_start + round((f - sp.orig_start) / sp.factor)
+        return None
+
+    def brute_map_span(t, s, e):
+        first = last = None
+        for sp in t._spans:
+            a, b = max(s, sp.orig_start), min(e, sp.orig_end)
+            if b <= a:
+                continue
+            ts = sp.timeline_start + round((a - sp.orig_start) / sp.factor)
+            te = sp.timeline_start + round((b - sp.orig_start) / sp.factor)
+            if first is None:
+                first = ts
+            last = te
+        return None if first is None else (first, max(first, last))
+
+    rng = random.Random(11)
+    checked = 0
+    for _ in range(60):
+        segs, pos = [], 0
+        for _ in range(rng.randint(1, 40)):
+            d = rng.randint(1, 50)
+            act = rng.choice(["keep", "keep", "delete", "speed"])
+            segs.append(Segment(pos, pos + d, act,
+                                factor=6.0 if act == "speed" else 1.0))
+            pos += d
+        t = RemapTable(segs, 30.0)
+        for f in range(-3, pos + 4):          # 含邊界與範圍外
+            checked += 1
+            assert brute_map_frame(t, f) == t.map_frame(f), \
+                f"map_frame 在 {f} 對到不同位置"
+        for _ in range(40):
+            a = rng.randint(-3, pos + 3)
+            b = a + rng.randint(0, 40)
+            checked += 1
+            assert brute_map_span(t, a, b) == t.map_span(a, b), \
+                f"map_span 在 ({a},{b}) 對到不同位置"
+    print(f"  ✓ 二分搜尋與笨方法逐點一致({checked} 次比對)")
+
+
+def test_unsorted_spans_are_rejected_or_sorted():
+    """沒排序的資料不可以讓查找安靜地出錯。
+
+    二分搜尋的前提是區間照原始時間有序。餵進沒排序的資料時,它不會報錯,
+    只會找到錯的位置——字幕會對到不對的地方,而且完全看不出來。
+    所以:建表時要嘛擋下來、要嘛自己排好。
+
+    from_spans 走「自己排好」那條:使用者真的可能在 Premiere 裡把片段
+    前後搬動,那是合法操作,不該讓它失敗。"""
+    # 直接建表:沒排序要當場擋下來,不能默默算錯
+    bad = [Segment(100, 200, "keep"), Segment(0, 50, "keep")]
+    try:
+        RemapTable(bad, 30.0)
+    except ValueError as e:
+        assert "排序" in str(e), f"錯誤訊息要說明是排序問題:{e}"
+    else:
+        raise AssertionError("沒排序的 segments 應該被擋下來")
+
+    # from_spans:片段被搬過順序仍要對得準(照原始時間自己排好)
+    shuffled = [(200, 300, 100, 1.0), (0, 100, 0, 1.0), (400, 500, 200, 1.0)]
+    t = RemapTable.from_spans(shuffled, 30.0)
+    assert t.map_frame(50) == 50, "第一段對錯了"
+    assert t.map_frame(250) == 150, "被搬到後面的那段對錯了"
+    assert t.map_frame(450) == 250, "第三段對錯了"
+    assert t.map_frame(350) is None, "不在任何片段裡的位置應該回 None"
+    print("  ✓ 沒排序的資料會被擋下;使用者搬動過的片段仍對得準")
+
+
 if __name__ == "__main__":
     print("執行重映射引擎測試...")
     test_keep_only()
@@ -281,4 +364,6 @@ if __name__ == "__main__":
     test_fully_cut_word_dropped()
     test_no_punct_uses_shorter_lines()
     test_punct_keeps_normal_line_limit()
+    test_lookup_matches_bruteforce_on_random_timelines()
+    test_unsorted_spans_are_rejected_or_sorted()
     print("\n全部通過 ✓  地基正確,可以往上蓋。")
