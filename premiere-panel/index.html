@@ -21,13 +21,13 @@
 
     <button id="pick" class="btn">1. 選擇影片</button>
     <button id="pickSelected" class="btn small ghost">用 Premiere 裡選取的素材</button>
-    <div class="hint">在專案面板或時間軸選好素材再按,省去開檔案總管。</div>
+    <div class="hint">在專案面板或時間軸選好素材再按,省去開檔案總管</div>
     <div id="videoPath" class="path">尚未選擇影片</div>
 
     <!-- 設定區(常用) -->
     <div class="section">
       <div class="section-head" id="settingsHead">
-        <span>⚙ 設定(改了就自動存)</span><span id="settingsToggle" class="chev">▸</span>
+        <span>⚙ 設定</span><span id="settingsToggle" class="chev">▸</span>
       </div>
       <div id="settingsBody" class="section-body" style="display:none">
         <div class="presetbar">
@@ -37,7 +37,7 @@
           <button id="presetDel" class="btn small ghost">刪除</button>
         </div>
         <div class="hint" style="margin:0 0 8px">
-          一鍵切換剪輯風格。只改「怎麼剪」的項目,外掛路徑與詞彙表不受影響。
+          一鍵切換剪輯風格。只動「怎麼剪」的項目,外掛路徑與詞庫不受影響
         </div>
         <div id="formCommon" class="form"></div>
 
@@ -60,9 +60,9 @@
             <span id="vocabMsg" class="savemsg"></span>
           </div>
           <div class="hint">
-            <b>只收「真的會被聽錯」的詞。</b>額度有硬上限,收太多會把重要的擠掉
-            ——「喇叭」「高頻」這種本來就聽得對,收了只是浪費。
-            改動存在 <code>config\vocab_local.json</code>,更新專案不會被蓋掉。
+            <b>只收真的會被聽錯的詞。</b>額度有上限,收太多會把重要的擠掉
+            ——「喇叭」「高頻」本來就聽得對,收了只是浪費。
+            改動存在 <code>config\vocab_local.json</code>,更新不會被蓋掉
           </div>
         </div>
         <div class="row">
@@ -80,29 +80,29 @@
     <!-- 剪輯後工具:活專案的「隨時可改」按鈕(跑完一次剪輯後出現) -->
     <div class="section" id="afterSec" style="display:none">
       <div class="section-head" id="afterHead">
-        <span>3. 剪輯後工具(隨時可用)</span><span id="afterToggle" class="chev">▾</span>
+        <span>3. 剪輯後工具</span><span id="afterToggle" class="chev">▾</span>
       </div>
       <div id="afterBody" class="section-body">
         <div id="afterVideo" class="path" style="margin:0 0 6px"></div>
         <button id="openReport" class="btn">開啟審閱報告</button>
-        <div class="hint">剪了哪裡、省多少時間,一分鐘掃完。</div>
+        <div class="hint">剪了哪裡、省多少時間,一分鐘掃完</div>
         <button id="rebuild" class="btn">重算剪輯 → 匯入新序列</button>
-        <div class="hint">改完設定按這顆,幾秒出新序列。舊序列保留,可比較後再取捨。</div>
+        <div class="hint">改完設定按這顆,幾秒出新序列。舊的保留,可比較後再取捨</div>
         <button id="applyVst" class="btn">幫目前序列掛人聲處理(實驗)</button>
-        <div class="hint"><b>多數情況不需要。</b>建議改用:視窗 &gt; 音軌混音器,
-          A1 軌效果插槽依序選 DeNoise → 參數等化器 → 動態(Premiere 內建、
-          不必安裝)——整軌一次搞定,片段再多也一樣快。</div>
+        <div class="hint"><b>多數情況不需要。</b>建議改用音軌混音器:A1 軌效果插槽
+          依序選 DeNoise → 參數等化器 → 動態(Premiere 內建)。整軌一次搞定,
+          片段再多都一樣快</div>
         <button id="subsFromSeq" class="btn">用目前序列產生字幕</button>
-        <div class="hint">自行剪輯後按這顆,字幕重新對準目前的時間軸。</div>
+        <div class="hint">自行剪輯後按這顆,字幕重新對準時間軸</div>
         <button id="clearCache" class="btn">清除快取(重新辨識)</button>
         <div class="hint">平常不需要。改設定會自動重跑對應步驟,
-          只有「結果異常但設定未動」時才用。</div>
+          只有結果異常但設定沒動時才用</div>
         <div id="afterMsg" class="savemsg"></div>
       </div>
     </div>
 
     <div class="hint">
-      剪完會自動匯入序列與字幕。<b>同一支片重跑會換掉上次那條</b>,不會愈堆愈多。<br>剪太兇或太保守?改設定按「重算剪輯」——那顆會<b>留著</b>舊的讓你比較。
+      剪完自動匯入序列與字幕。<b>同一支片重跑會換掉上次那條</b>,不會愈堆愈多。<br>剪太兇或太保守?改設定按「重算剪輯」——那顆會<b>留著</b>舊的讓你比較
     </div>
   </div>
 
@@ -112,7 +112,7 @@
       <span class="chev">◂</span><span>返回</span>
     </div>
     <h1>進階設定</h1>
-    <div class="hint" style="margin:0 0 8px">平常不用動,改了會自動儲存。</div>
+    <div class="hint" style="margin:0 0 8px">平常不用動</div>
     <div id="formAdvanced" class="form"></div>
     <div class="row">
       <span id="saveMsg2" class="savemsg"></span>

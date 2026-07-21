@@ -129,40 +129,40 @@
   // 順序有意義:越具體的規則放越前面,第一個命中的就是答案。
   var ERROR_TABLE = [
     { re: /(CUDA|GPU) out of memory|torch\.cuda\.OutOfMemoryError/i,
-      msg: "顯示卡記憶體不夠用了。\n" +
-           "  → 到「⚙ 設定 > 辨識 > 辨識模型」把 large-v3 改成 medium,再跑一次。\n" +
-           "     (medium 稍微不準一點,但省一半以上的顯卡記憶體)" },
+      msg: "顯示卡記憶體不足。\n" +
+           "  → 到「⚙ 設定 > 辨識 > 辨識模型」把 large-v3 改成 medium,再跑一次\n" +
+           "     (medium 稍微不準,但省一半以上的顯卡記憶體)" },
     { re: /No module named ['"]?([\w.]+)/i,
-      msg: "少裝了一個套件:$1。\n" +
+      msg: "缺少套件:$1。\n" +
            "  → 在命令列執行:pip install $1\n" +
-           "     (若你用的是 miniconda,請先切到跟面板同一個環境)" },
+           "     (用 miniconda 的話,先切到跟面板同一個環境)" },
     { re: /auto-editor/i,
-      msg: "剪輯引擎 auto-editor 沒跑成功。\n" +
+      msg: "剪輯引擎 auto-editor 執行失敗。\n" +
            "  → 在命令列執行:pip install auto-editor" },
     { re: /\[WinError 2\]|ffmpeg.*(not found|不是內部或外部命令)|'ffmpeg' is not recognized/i,
       msg: "找不到 ffmpeg(處理影音的必要工具)。\n" +
            "  → 用系統管理員身分執行:winget install Gyan.FFmpeg\n" +
-           "     裝完要重新開啟 Premiere,面板才吃得到新的 PATH。" },
+           "     裝完要重開 Premiere,面板才吃得到新的 PATH" },
     { re: /\[WinError 5\]|Permission denied|Errno 13|4294967283/i,
-      msg: "檔案被鎖住,寫不進去 —— 幾乎都是 Premiere 正在使用那個影片檔。\n" +
-           "  → 在 Premiere 專案面板把這支影片相關的序列關掉(或關掉專案),再按一次。\n" +
-           "     程式已經會自動改用新檔名避開,若仍失敗才需要這樣做。" },
+      msg: "檔案被鎖住 —— 幾乎都是 Premiere 正在使用那支影片。\n" +
+           "  → 把這支影片相關的序列關掉(或關掉專案),再按一次\n" +
+           "     程式本來就會自動改用新檔名避開,還是失敗才需要這樣做" },
     { re: /cudnn|CUDA driver|no kernel image|CUDA error/i,
       msg: "顯示卡的 CUDA 環境有問題(驅動或 PyTorch 版本不合)。\n" +
-           "  → 先確認能不能跑:改用 CPU 辨識(較慢但一定會動)——\n" +
+           "  → 先改用 CPU 辨識確認跑得動(較慢但一定會動):\n" +
            "     編輯 config/settings_local.json,加一行 \"WHISPER_DEVICE\": \"cpu\"" },
     { re: /scan failure|Unable to load plugin|VST/i,
       msg: "降噪外掛載入失敗。\n" +
-           "  → 檢查「進階設定 > VST 外掛路徑」是不是指到「內層」那個 .vst3 檔。\n" +
-           "     VoiceFX 正確路徑長這樣(注意最後還有一層 .vst3):\n" +
+           "  → 檢查「進階設定 > VST 外掛路徑」有沒有指到內層那顆 .vst3\n" +
+           "     正確路徑長這樣(最後還有一層 .vst3):\n" +
            "     ...\\VoiceFX.vst3\\Contents\\x86_64-win\\VoiceFX.vst3" },
     { re: /No space left|磁碟空間|WinError 112/i,
-      msg: "硬碟空間不夠了。\n" +
-           "  → 這個工具會在 output 資料夾產生暫存音檔(4K 長片可能好幾 GB)。\n" +
-           "     清掉 output 底下用不到的舊影片資料夾即可。" },
+      msg: "硬碟空間不足。\n" +
+           "  → output 資料夾會產生暫存音檔(4K 長片可能好幾 GB),\n" +
+           "     清掉底下用不到的舊影片資料夾即可" },
     { re: /沒有音軌/,
-      msg: "這支影片沒有聲音,本工具沒有東西可以處理。\n" +
-           "  → 確認你選的是「有收音」的錄影檔。" }
+      msg: "這支影片沒有聲音,沒有東西可以處理。\n" +
+           "  → 確認你選的是有收音的錄影檔" }
   ];
 
   // 從這次的訊息裡找出看得懂的解釋;找不到就回 null(照舊顯示原始訊息)
@@ -293,8 +293,8 @@
       // 選到本工具自己產出的影片的話,剪出來的東西會是「剪過的再剪一次」,
       // 幾乎一定不是你要的。這種錯很難自己看出來,所以直接擋下。
       if (/[\\/]output[\\/]/i.test(p) && /01_clean_av/i.test(p)) {
-        setStatus("你選到的是本工具產生的影片(01_clean_av),不是原始錄影檔。"
-          + "請改選你自己錄的那支原片。", "err");
+        setStatus("這是本工具產生的影片(01_clean_av),不是原始錄影檔。"
+          + "請改選你自己錄的原片", "err");
         return;
       }
       useVideo(p, "(從 Premiere 選取)");
@@ -524,7 +524,7 @@
               if (caps && caps.has_editor) {
                 adj.style.display = "";
               } else if (caps && caps.ok) {
-                pi.title = "這個外掛沒有視窗介面,請用下方「降噪:消除什麼 / 強度」調整";
+                pi.title = "這個外掛沒有視窗介面,請用下方「降噪:消除對象 / 強度」調整";
               }
             });
           }
@@ -980,14 +980,14 @@
     var msg = $("saveMsg2");
     function say(t, ok) { if (msg) { msg.textContent = t; msg.style.color = ok ? "#2e8b57" : "#e06c6c"; } }
     if (!p || !p.trim()) { say("請先填 .vst3 路徑", false); return; }
-    say("外掛介面開啟中…調整後關閉那個視窗即會儲存", true);
+    say("外掛介面開啟中…調整後關閉視窗即儲存", true);
     var proc = cp.spawn(PYTHON, ["vst_tool.py", "open", p.trim()], { cwd: PROJECT_DIR });
     proc.stdout.on("data", function (d) { appendLog(d.toString()); });
     proc.stderr.on("data", function (d) { appendLog(d.toString()); });
     proc.on("error", function (e) { say("無法啟動:" + e.message, false); });
     proc.on("close", function (code) {
       if (code === 0) { say("VST 參數已儲存 ✓,下次剪輯自動套用", true); }
-      else if (code === 2) { say("這個外掛沒有視窗介面,請改用下方「降噪:消除什麼 / 強度」調整", false); }
+      else if (code === 2) { say("這個外掛沒有視窗介面,請改用下方「降噪:消除對象 / 強度」調整", false); }
       else { say("調整結束(代碼 " + code + ",見下方訊息)", false); }
     });
   }
@@ -1003,8 +1003,8 @@
     $("pick").disabled = true;
     $("log").textContent = "";
     logBuf = "";
-    setStatus("處理中,請稍候…(第一次會下載模型,較久)", "busy");
-    appendLog("▶ 已啟動,正在載入程式與模型…(下面沒動靜是正常的,請稍候)\n");
+    setStatus("處理中…(第一次要下載模型,較久)", "busy");
+    appendLog("▶ 已啟動,正在載入程式與模型…(這段沒動靜是正常的)\n");
 
     var name = path.basename(selectedVideo, path.extname(selectedVideo));
     // -u = 不緩衝輸出:Python 的進度訊息才會「即時」出現在下面,
@@ -1021,7 +1021,7 @@
     proc.on("close", function (code) {
       $("pick").disabled = false;
       if (code !== 0) {
-        setStatus("處理失敗,下方有白話說明", "err");
+        setStatus("處理失敗,說明在下方", "err");
         explainInto();
         beep(false);
         $("run").disabled = false;
@@ -1189,8 +1189,8 @@
     setAfterButtons(false);
     // 文案不能寫死「不重跑辨識」:改了辨識或聲音設定時,程式會自動重跑
     // 那一段(要幾分鐘)。講死了你會以為當掉。
-    afterSay("用目前設定重算中…(一般幾秒;若你改了辨識或聲音設定,"
-      + "會自動重跑那一段,需要幾分鐘)", true);
+    afterSay("重算中…(一般幾秒;改過辨識或聲音設定的話會自動重跑那一段,"
+      + "需要幾分鐘)", true);
     logBuf = "";
     appendLog("▶ 重算已啟動:用新設定重新決策。\n"
       + "  (剪輯類設定=幾秒;辨識或聲音類設定有改動=自動重跑該步驟,較久)\n");
@@ -1209,7 +1209,7 @@
       });
       proc.on("close", function (code) {
         if (code !== 0) {
-          afterSay("重算失敗,下方有白話說明", false);
+          afterSay("重算失敗,說明在下方", false);
           explainInto();
           beep(false);
           setAfterButtons(true); return;
@@ -1270,10 +1270,9 @@
     return out.join(" → ");
   }
 
-  var MIXER_HINT = "改用這個做法(更穩也更快):視窗 > 音軌混音器,"
-    + "A1 軌的效果插槽由上往下依序選「降噪 DeNoise」→「參數等化器 "
-    + "Parametric Equalizer」→「動態 Dynamics」。插槽有五格,三個放得下;"
-    + "整軌一次搞定,不管幾個片段都一樣快,隨時可調也可整個關掉比較差異。";
+  var MIXER_HINT = "建議改用音軌混音器:A1 軌效果插槽依序選 DeNoise → "
+    + "參數等化器 → 動態(插槽有五格,三個放得下)。"
+    + "整軌一次搞定,片段再多都一樣快,隨時可調或關掉比較。";
 
   // 把人聲處理掛到目前序列的每個片段。done(成功與否, 給人看的訊息)
   //
@@ -1365,7 +1364,7 @@
         function (err, stdout, stderr) {
           appendLog(String(stdout || "") + String(stderr || ""));
           if (err) {
-            afterSay("字幕對位失敗,下方有白話說明", false);
+            afterSay("字幕對位失敗,說明在下方", false);
             explainInto();
             setAfterButtons(true); return;
           }
