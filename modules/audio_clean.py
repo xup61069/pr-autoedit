@@ -82,10 +82,13 @@ def _suppress_native_output():
         os.close(saved_err)
 
 
-def extract_audio(video_path: str, out_wav: str) -> str:
-    """從影片抽出音軌成 WAV(48kHz 單聲道,適合後續處理)"""
+def extract_audio(source, out_wav: str) -> str:
+    """從影片抽出音軌成 WAV(48kHz 單聲道,適合後續處理)。
+
+    source 是 modules.sources.VideoSource:可能是一個檔,也可能是好幾個檔
+    要接成一支。input_args() 會給出對應的 ffmpeg 輸入參數,這裡不必分辨。"""
     subprocess.run([
-        "ffmpeg", "-y", "-i", video_path,
+        "ffmpeg", "-y", *source.input_args(),
         "-vn", "-ac", "1", "-ar", "48000",
         "-c:a", "pcm_s16le", out_wav,
     ], check=True, capture_output=True)
@@ -243,21 +246,26 @@ def _quality_args(encoder: str) -> list[str]:
     return ["-cq", q] if encoder.endswith("_nvenc") else ["-crf", q]
 
 
-def mux_back(video_path: str, clean_wav: str, out_mp4: str) -> str:
+def mux_back(source, clean_wav: str, out_mp4: str) -> str:
     """把清理後的音訊混回影片。回傳實際寫出的檔案路徑(被 Premiere
     鎖住時會自動改名,呼叫端要用回傳值,不要用傳入的 out_mp4)。
     這個檔案就是 Premiere XML 要引用的來源 —— 時間軸上聽到的直接是乾淨聲音。
 
     先試「無損複製」視訊串流(快、不掉畫質);少數影片複製後會壞,
-    自動改用 GPU(hevc_nvenc)重新編碼,GPU 不可用再退回 CPU。"""
+    自動改用 GPU(hevc_nvenc)重新編碼,GPU 不可用再退回 CPU。
+
+    source 給多個檔時,接合就發生在這一步 —— 不會先產生一份合併後的大檔。
+    4K 長片一份就十幾 GB,那份中繼檔用完即丟,純粹浪費硬碟跟時間;
+    這裡寫出來的 01_clean_av.mp4 本來就是完整的一支。"""
     picked = _writable_target(out_mp4)
     if picked != out_mp4:
         print(f"  ({os.path.basename(out_mp4)} 正被 Premiere 使用中,"
               f"改存 {os.path.basename(picked)})")
     out_mp4 = picked
+    in_args = source.input_args()
     # 路線 1:無損複製(絕大多數影片幾秒完成)
     subprocess.run([
-        "ffmpeg", "-y", "-i", video_path, "-i", clean_wav,
+        "ffmpeg", "-y", *in_args, "-i", clean_wav,
         "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ac", "2",
         "-map", "0:v", "-map", "1:a", "-shortest", out_mp4,
     ], check=True, capture_output=True)
@@ -274,7 +282,7 @@ def mux_back(video_path: str, clean_wav: str, out_mp4: str) -> str:
         print(f"  嘗試 {label}…")
         try:
             subprocess.run([
-                "ffmpeg", "-y", "-i", video_path, "-i", clean_wav,
+                "ffmpeg", "-y", *in_args, "-i", clean_wav,
                 "-map", "0:v", "-map", "1:a",
                 "-c:v", encoder, *extra, *_quality_args(encoder),
                 "-c:a", "aac", "-b:a", "192k", "-ac", "2",
@@ -300,7 +308,7 @@ def mux_back(video_path: str, clean_wav: str, out_mp4: str) -> str:
         "      winget upgrade Gyan.FFmpeg")
 
 
-def clean_audio(video_path: str, work_dir: str) -> str:
+def clean_audio(source, work_dir: str) -> str:
     """清理音訊:抽音軌 →(降噪)→(響度標準化)。回傳乾淨的 WAV 路徑。
 
     注意:這一步『不』混回影片。混音留到決策引擎算完靜音段之後,
@@ -309,7 +317,7 @@ def clean_audio(video_path: str, work_dir: str) -> str:
     clean_wav = wpath(work_dir, "01_clean.wav")
     norm_wav = wpath(work_dir, "01_clean_norm.wav")
 
-    extract_audio(video_path, raw_wav)
+    extract_audio(source, raw_wav)
 
     # "none":不做降噪與標準化,直接用原始音軌(適合快速測試整條管線)
     if cfg.AUDIO_MODE == "none":

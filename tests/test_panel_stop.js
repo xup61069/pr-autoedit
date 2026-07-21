@@ -142,7 +142,7 @@ function stage4() {
 function stage5() {
   // 每一項:[給人看的名字, 該按鈕處理函式裡一定會出現的字串]
   const longRunning = [
-    ["一鍵自動剪輯", "\"pipeline.py\", selectedVideo"],
+    ["一鍵自動剪輯", "\"pipeline.py\"].concat(videos)"],
     ["重算剪輯", "\"--skip-audio\", \"--stamp\""],
     ["用目前序列產生字幕", "\"modules.live_subs\""]
   ];

@@ -6,6 +6,9 @@
     python pipeline.py 你的影片.mp4 --fps 29.97
     python pipeline.py 你的影片.mp4 --skip-audio   (音訊已清理過,只重跑後段)
 
+    # 錄影軟體把長片切成好幾個檔時,全部給進來會接成「一支」處理
+    python pipeline.py 教學.mp4 教學_0001.mp4 教學_0002.mp4
+
 產物(全部在 output/影片名/ 底下)。最外層只放你會用到的四個:
     04_report.html       審閱報告(先開這個掃一遍)
     04_project.xml       帶 marker 的 Premiere 專案(匯入這個)
@@ -64,37 +67,6 @@ def has_audio(video_path: str) -> bool:
     return out == "audio"
 
 
-def get_fps(video_path: str) -> float:
-    """用 ffprobe 讀出影片幀率"""
-    out = subprocess.run([
-        "ffprobe", "-v", "0", "-select_streams", "v:0",
-        "-show_entries", "stream=r_frame_rate",
-        "-of", "csv=p=0", video_path,
-    ], capture_output=True, text=True, check=True).stdout.strip()
-    num, den = out.split("/")
-    return round(float(num) / float(den), 3)
-
-
-def get_dimensions(video_path: str) -> tuple[int, int]:
-    """讀出影片的寬高(活專案 XML 需要)"""
-    out = subprocess.run([
-        "ffprobe", "-v", "0", "-select_streams", "v:0",
-        "-show_entries", "stream=width,height",
-        "-of", "csv=p=0", video_path,
-    ], capture_output=True, text=True, check=True).stdout.strip()
-    w, h = out.split(",")[:2]
-    return int(w), int(h)
-
-
-def get_total_frames(video_path: str, fps: float) -> int:
-    out = subprocess.run([
-        "ffprobe", "-v", "0", "-select_streams", "v:0",
-        "-show_entries", "format=duration",
-        "-of", "csv=p=0", video_path,
-    ], capture_output=True, text=True, check=True).stdout.strip()
-    return int(float(out) * fps)
-
-
 def audio_fingerprint() -> str:
     """把「會影響音檔內容」的設定壓成一個指紋。
 
@@ -116,7 +88,10 @@ def audio_fingerprint() -> str:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("video", help="輸入影片路徑")
+    # 可以給好幾個檔:錄影軟體錄長片會自動切檔,一堂課常常是三四個檔。
+    # 給多個的話會接成「一支」處理,產出一條序列、一份字幕、一份報告。
+    ap.add_argument("video", nargs="+",
+                    help="輸入影片路徑(可給多個,會照檔名順序接成一支)")
     ap.add_argument("--fps", type=float, default=None,
                     help="覆寫幀率(預設自動偵測)")
     ap.add_argument("--skip-audio", action="store_true",
@@ -130,24 +105,43 @@ def main():
     if args.mode:
         cfg.DELIVERY_MODE = args.mode
 
-    if not os.path.exists(args.video):
-        sys.exit(f"找不到檔案:{args.video}")
+    missing = [p for p in args.video if not os.path.exists(p)]
+    if missing:
+        sys.exit("找不到檔案:" + "、".join(missing))
 
     require_ffmpeg()
 
-    if not has_audio(args.video):
-        sys.exit("這支影片沒有音軌,無法處理。\n"
-                 "本工具需要有聲音才能轉字幕、去冗詞、剪停頓。\n"
-                 "請確認你選的是有收音的錄影檔。")
+    for p in args.video:
+        if not has_audio(p):
+            sys.exit(f"這支影片沒有音軌,無法處理:{os.path.basename(p)}\n"
+                     "本工具需要有聲音才能轉字幕、去冗詞、剪停頓。\n"
+                     "請確認你選的是有收音的錄影檔。")
 
-    name = os.path.splitext(os.path.basename(args.video))[0]
+    # 一個或多個檔,對後面的步驟來說都表現得像「一支影片」(見 modules/sources)
+    from modules import sources
+    src = sources.from_args(args.video)
+
+    name = src.name
     work = os.path.join("output", name)
     os.makedirs(work, exist_ok=True)
     # 建好中繼檔資料夾,順便把舊版平鋪在外層的中繼檔搬進去
     prepare_workspace(work)
+    # concat 清單要放在這支片自己的中繼檔資料夾裡(工作區建好之後才知道在哪)
+    src.set_list_dir(os.path.join(work, "_work"))
 
-    fps = args.fps or get_fps(args.video)
-    print(f"\n=== 處理 {name}(fps={fps})===\n")
+    # 規格不一致就當場停下來。接合是「不重新編碼」的,規格不同時 ffmpeg
+    # 不會報錯,而是產生前半段正常、後半段錯亂的檔——要等到剪完進 Premiere
+    # 才會發現,那時候已經浪費很多時間了。
+    bad = src.incompatibility()
+    if bad:
+        sys.exit(bad)
+
+    fps = args.fps or src.fps()
+    if src.multi:
+        print(f"\n=== 處理 {name}(fps={fps})===")
+        print(f"  接成一支:{src.describe()}\n")
+    else:
+        print(f"\n=== 處理 {name}(fps={fps})===\n")
 
     # --- 1. 音訊清理(只清理,先不混回影片)---
     clean_mp4 = wpath(work, "01_clean_av.mp4")
@@ -173,7 +167,7 @@ def main():
     else:
         print("[1/5] 音訊清理")
         from modules.audio_clean import clean_audio
-        clean_wav = clean_audio(args.video, work)
+        clean_wav = clean_audio(src, work)
         with open(audio_info, "w", encoding="utf-8") as f:
             json.dump({"fingerprint": audio_fp}, f)
 
@@ -181,7 +175,7 @@ def main():
     print("[2/5] 語音轉錄")
     from modules.transcribe import transcribe
     cache = wpath(work, "02_transcript.json")
-    audio_for_asr = clean_wav if os.path.exists(clean_wav) else args.video
+    audio_for_asr = clean_wav if os.path.exists(clean_wav) else src.first
     words = transcribe(audio_for_asr, cache_json=cache)
 
     if not words:
@@ -189,7 +183,7 @@ def main():
               "或 config 的 WHISPER_LANGUAGE 設錯;\n"
               "    這種情況下整支片會被當成靜音處理,產出可能不如預期。")
 
-    total_frames = get_total_frames(args.video, fps)
+    total_frames = src.total_frames(fps)
 
     # --- 2.5 音訊能量分析(用「原始」音訊,降噪後的檔音樂可能已被削掉)---
     #   audible = 有聲音的地方 -> 拿來「保護」音樂/音效段
@@ -229,7 +223,7 @@ def main():
         print("  分析畫面活動…(第一次要掃過整支影片,之後會沿用)")
         try:
             motion = detect_motion_regions(
-                args.video, fps, cache_json=wpath(work, "02_motion.json"))
+                src, fps, cache_json=wpath(work, "02_motion.json"))
         except Exception as e:
             # 掃畫面只是加分項,不該讓整支片一個產物都拿不到。
             # 但也不能安靜地降級——降級後的結果跟你選的設定不一樣。
@@ -348,7 +342,7 @@ def main():
     if actual_mp4 is None:
         print("  混回影片...")
         # 回傳的路徑可能不同於 clean_mp4(被 Premiere 鎖住時自動改名)
-        actual_mp4 = mux_back(args.video, audio_for_mux, clean_mp4)
+        actual_mp4 = mux_back(src, audio_for_mux, clean_mp4)
         with open(mux_info, "w", encoding="utf-8") as f:
             json.dump({"fingerprint": fingerprint,
                        "file": os.path.basename(actual_mp4)}, f)
@@ -388,7 +382,7 @@ def main():
     if live:
         # 活專案:全保留 + 標籤,自製 XML,不需要 auto-editor
         from modules.premiere_xml import export_live_xml
-        w, h = get_dimensions(args.video)
+        w, h = src.dimensions()
         export_live_xml(timeline, final_xml, w, h, seq_name=seq_name)
         # 時間軸=原片,字幕不需要重映射(用「全保留」恆等映射)
         sub_table = RemapTable([Segment(0, total_frames, "keep")], fps)

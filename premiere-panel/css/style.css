@@ -200,3 +200,24 @@ h1 {
 .vstrow { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
 .vstrow input[type="text"] { flex: 1; min-width: 0; }
 .vstrow .btn.small { margin: 0; padding: 5px 9px; white-space: nowrap; }
+
+/* 多檔合併時的檔案清單。
+   順序一定要看得見:接錯順序會產生一支前後顛倒的片,而那要等到匯進
+   Premiere 才看得出來。所以列出來、標號碼、可以上下調。 */
+.vhead {
+  font-size: 0.85em; color: #8a8a8a; margin-bottom: 5px;
+}
+.vrow {
+  display: flex; gap: 5px; align-items: center; margin-bottom: 3px;
+}
+.vrow .vidx {
+  color: #8a8a8a; font-size: 0.85em; min-width: 16px; text-align: right;
+}
+.vrow .vname {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vrow .btn.vmove {
+  margin: 0; padding: 2px 7px; line-height: 1.3; min-width: 0;
+}
+.vrow .btn.vmove:disabled { opacity: 0.3; cursor: default; }

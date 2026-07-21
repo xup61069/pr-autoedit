@@ -439,9 +439,11 @@ def test_motion_probe_error_is_readable():
     exit status 1」加一長串指令,真正的原因被 capture_output 吃在 stderr 裡。
     對零程式基礎的人那等於沒有訊息,面板的錯誤翻譯表也對不上任何一條。"""
     from modules.video_probe import _sample_frames
+    from modules.sources import VideoSource
+    missing = VideoSource([os.path.join(os.path.dirname(__file__),
+                                        "_this_file_does_not_exist.mp4")])
     try:
-        _sample_frames(os.path.join(os.path.dirname(__file__),
-                                    "_this_file_does_not_exist.mp4"), 4.0)
+        _sample_frames(missing, 4.0)
     except RuntimeError as e:
         msg = str(e)
         assert "ffmpeg" in msg, f"訊息沒提到是誰失敗的:{msg}"
@@ -454,34 +456,41 @@ def test_motion_probe_error_is_readable():
 
 
 def test_motion_cache_notices_a_different_video():
-    """畫面變化量的快取要認得「這是不是同一支影片」。
+    """畫面變化量的快取要認得「這是不是同一批影片」。
 
     快取以前只記 sample_fps。把同一支片重新輸出一份(改了一段內容、
     或換個編碼再輸出成同樣的檔名),快取會被當成有效的沿用,
     畫面判定就是照舊那支片算的 —— 剪出來的東西對不上新影片,
-    而且完全沒有徵兆。"""
-    import json, tempfile, time
-    from modules.video_probe import _video_fingerprint
+    而且完全沒有徵兆。多檔合併之後又多一種:少選/多選一個檔也算換了來源。"""
+    import tempfile, time
+    from modules.sources import VideoSource
 
     d = tempfile.mkdtemp(prefix="motion_cache_")
     try:
-        video = os.path.join(d, "clip.mp4")
-        with open(video, "wb") as f:
-            f.write(b"x" * 1000)
-        fp1 = _video_fingerprint(video)
-        assert fp1, "指紋不該是空的"
+        a = os.path.join(d, "clip1.mp4")
+        b = os.path.join(d, "clip2.mp4")
+        for p in (a, b):
+            with open(p, "wb") as f:
+                f.write(b"x" * 1000)
+
+        fp_one = VideoSource([a]).fingerprint()
+        assert fp_one, "指紋不該是空的"
+
+        # 多選了一個檔 -> 來源不一樣了,不能沿用舊快取
+        assert VideoSource([a, b]).fingerprint() != fp_one, \
+            "多接了一個檔,指紋卻沒變 -> 會沿用只有一個檔時算的畫面判定"
 
         # 內容變了(重新輸出一份同名影片)-> 指紋要跟著變
         time.sleep(0.01)
-        with open(video, "wb") as f:
+        with open(a, "wb") as f:
             f.write(b"y" * 2000)
-        fp2 = _video_fingerprint(video)
-        assert fp1 != fp2, "影片換了內容,指紋卻沒變 -> 舊快取會被誤用"
+        assert VideoSource([a]).fingerprint() != fp_one, \
+            "影片換了內容,指紋卻沒變 -> 舊快取會被誤用"
 
         # 檔案不見了也不能爆掉(只是快取失效)
-        os.remove(video)
-        assert _video_fingerprint(video) == "", "檔案不存在時應回空字串"
-        print("  ✓ 影片換了內容,畫面快取會失效重算")
+        os.remove(a)
+        assert VideoSource([a]).fingerprint(), "檔案不存在時也要回得出東西"
+        print("  ✓ 影片換了內容、或多接一個檔,畫面快取都會失效重算")
     finally:
         import shutil
         shutil.rmtree(d, ignore_errors=True)

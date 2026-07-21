@@ -82,8 +82,9 @@ python -m tests.test_e2e_smoke
 node tests/test_panel_voicefx.js
 node tests/test_panel_vocab.js
 node tests/test_panel_stop.js
+node tests/test_panel_merge.js
 ```
-九套都顯示「全部通過」就代表核心沒問題。前六套是 Python,後三套是面板的
+十套都顯示「全部通過」就代表核心沒問題。前六套是 Python,後四套是面板的
 邏輯(用假的 Premiere 環境跑,不必真的開 Premiere;需要有 Node.js,
 沒裝的話跳過那三套也沒關係)。
 

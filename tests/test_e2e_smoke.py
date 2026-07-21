@@ -375,6 +375,89 @@ def test_panel_dump_is_valid():
     print(f"  ✓ 面板設定 JSON 正常({len(data['fields'])} 個欄位)")
 
 
+def test_merge_sources():
+    """多檔合併:順序、命名、指紋、相容性檢查。
+
+    這些都是「錯了要等到匯進 Premiere 才發現」的東西——接錯順序會得到一支
+    前後顛倒的片,命名對不上會讓面板說「找不到報告」,指紋不對會沿用
+    上一批影片算出來的畫面判定。"""
+    import tempfile, shutil
+    from modules import sources
+
+    d = tempfile.mkdtemp(prefix="merge_test_")
+    try:
+        made = []
+        for n in ("part1.mp4", "part2.mp4", "part10.mp4"):
+            p = os.path.join(d, n)
+            with open(p, "wb") as f:
+                f.write(b"x" * 100)
+            made.append(p)
+
+        # 自然排序:part2 要排在 part10 前面(字串排序會反過來)
+        src = sources.from_args([made[2], made[0], made[1]])
+        assert [os.path.basename(p) for p in src.paths] == \
+            ["part1.mp4", "part2.mp4", "part10.mp4"], \
+            f"排序不對:{[os.path.basename(p) for p in src.paths]}"
+
+        # 命名:面板要靠這個名字去找產物,規則不能悄悄改
+        assert src.name == "part1_合併3支", src.name
+        assert sources.VideoSource([made[0]]).name == "part1", "單檔不該加後綴"
+
+        # 指紋:少選一個檔、或某個檔內容變了,都要算出不同的指紋
+        fp_all = src.fingerprint()
+        assert sources.VideoSource(made[:2]).fingerprint() != fp_all, \
+            "少一個檔卻算出相同的指紋 -> 會沿用上一批的畫面判定"
+        with open(made[0], "wb") as f:
+            f.write(b"y" * 200)
+        assert src.fingerprint() != fp_all, "檔案內容變了,指紋卻沒變"
+
+        # 單檔不產生 concat 清單,多檔才產生
+        one = sources.VideoSource([made[0]], list_dir=d)
+        assert one.input_args() == ["-i", made[0]], one.input_args()
+        assert not one.multi
+        args = sources.VideoSource(made, list_dir=d).input_args()
+        assert args[:4] == ["-f", "concat", "-safe", "0"], args
+        listed = open(args[-1], encoding="utf-8").read().strip().splitlines()
+        assert len(listed) == 3 and all(l.startswith("file '") for l in listed), \
+            f"concat 清單格式不對:{listed}"
+        # 清單裡的順序就是接合的順序
+        assert listed[0].endswith("part1.mp4'") and listed[2].endswith("part10.mp4'")
+        print("  ✓ 多檔合併:排序、命名、指紋、concat 清單都正確")
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_merge_rejects_mismatched_specs():
+    """規格不一樣的檔要當場擋下來,而且要說清楚哪裡不一樣。
+
+    concat 是「不重新編碼」的接合,規格不同時 ffmpeg 不會報錯,而是產生
+    前半段正常、後半段畫面錯亂的檔——要等到剪完進 Premiere 才發現。
+    這種「安靜地產出壞東西」正是這個專案最不能接受的失敗方式。"""
+    from modules import sources
+
+    class FakeSource(sources.VideoSource):
+        def __init__(self, paths, infos):
+            super().__init__(paths)
+            self._infos = infos
+
+    same = {"width": "3840", "height": "2160",
+            "r_frame_rate": "30/1", "codec_name": "hevc", "duration": 60.0}
+    diff = dict(same, width="1920", height="1080")
+
+    ok_src = FakeSource(["a.mp4", "b.mp4"], [same, dict(same)])
+    assert ok_src.incompatibility() is None, "規格相同卻被擋下來"
+
+    bad = FakeSource(["a.mp4", "b.mp4"], [same, diff]).incompatibility()
+    assert bad, "規格不同卻沒被擋下來"
+    for expect in ("3840x2160", "1920x1080", "a.mp4", "b.mp4"):
+        assert expect in bad, f"錯誤訊息沒說出「{expect}」:{bad}"
+    assert "解法" in bad, "錯誤訊息要告訴使用者下一步做什麼"
+
+    # 單檔永遠不用檢查
+    assert FakeSource(["a.mp4"], [same]).incompatibility() is None
+    print("  ✓ 規格不一致會擋下來,並指出是哪兩個檔、差在哪")
+
+
 def test_report_stays_usable_on_a_long_video():
     """長片的報告要「生得快」也要「開得動」。
 
@@ -580,6 +663,8 @@ if __name__ == "__main__":
     test_tests_never_touch_personal_config()
     test_every_setting_is_reachable_or_explained()
     test_panel_dump_is_valid()
+    test_merge_sources()
+    test_merge_rejects_mismatched_specs()
     test_report_stays_usable_on_a_long_video()
     test_short_report_is_not_truncated()
     test_docs_list_every_test_suite()

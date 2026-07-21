@@ -48,12 +48,18 @@
   } catch (e) {}
   if (!PYTHON) PYTHON = detectPython(PROJECT_DIR);
 
+  // 選到的影片。可以是好幾個 —— 錄影軟體錄長片會自動切檔,一堂課常常是
+  // 三四個檔,選起來會接成「一支」處理(一條序列、一份字幕、一份報告)。
+  // selectedVideo 永遠是清單裡的第一個,舊的程式碼照舊用它就對了。
+  var selectedVideos = [];
   var selectedVideo = null;
   var settingsData = null;   // ui_settings.py dump 的結果
   var controls = {};         // key -> 讀值函式
   var fieldMeta = [];        // [{f, wrap}] 供 show_if 連動顯示用
   var groupSections = [];    // [{sec, body}] 供隱藏整個空分組用
-  var lastVideo = null;      // 最近一次成功處理的影片(剪輯後工具用)
+  // 最近一次成功處理的來源(剪輯後工具用)。永遠是「一份清單」——
+  // 合併處理時不只一個檔,而重算剪輯要把整份原封不動再傳一次。
+  var lastVideos = [];
 
   var $ = function (id) { return document.getElementById(id); };
 
@@ -293,14 +299,107 @@
   });
 
   // ---------- 選擇影片 ----------
+  // 檔名的「自然排序」:讓 part2 排在 part10 前面。
+  // 跟 Python 那邊 sources.natural_key 是同一套規則 —— 面板顯示的順序
+  // 必須就是實際接合的順序,不然你在畫面上確認過的東西是假的。
+  function naturalKey(p) {
+    var name = String(p).split(/[\\/]/).pop().toLowerCase();
+    return name.replace(/\d+/g, function (n) {
+      return String(n.length) + n;      // 位數前綴:字串比較就等於數值比較
+    });
+  }
+
+  function sortNatural(paths) {
+    return paths.slice().sort(function (a, b) {
+      var ka = naturalKey(a), kb = naturalKey(b);
+      return ka < kb ? -1 : (ka > kb ? 1 : 0);
+    });
+  }
+
+  // 把選到的檔設成目前的來源,並把清單畫出來
+  function useVideos(paths, note) {
+    selectedVideos = paths.slice();
+    selectedVideo = selectedVideos[0] || null;
+    renderVideoList(note);
+    $("run").disabled = !selectedVideo;
+  }
+
+  // 多檔時要把順序「顯示出來、而且可以調」。
+  // 錄影軟體切出來的 _0001/_0002 照檔名排是對的,但你自己錄的三段
+  // (開頭 / 正片 / 結尾)就不一定 —— 順序錯了會接出一支前後顛倒的片,
+  // 而那要等到匯進 Premiere 才看得出來。所以一定要看得到。
+  function renderVideoList(note) {
+    var box = $("videoPath");
+    box.innerHTML = "";
+    if (!selectedVideos.length) {
+      box.textContent = "尚未選擇影片";
+      return;
+    }
+    if (selectedVideos.length === 1) {
+      box.textContent = selectedVideos[0] + (note || "");
+      return;
+    }
+    var head = document.createElement("div");
+    head.className = "vhead";
+    head.textContent = "接成一支處理(" + selectedVideos.length + " 個檔,"
+      + "由上往下的順序)" + (note || "");
+    box.appendChild(head);
+
+    selectedVideos.forEach(function (p, i) {
+      var row = document.createElement("div");
+      row.className = "vrow";
+      var idx = document.createElement("span");
+      idx.className = "vidx";
+      idx.textContent = (i + 1) + ".";
+      var nm = document.createElement("span");
+      nm.className = "vname";
+      nm.textContent = p.split(/[\\/]/).pop();
+      nm.title = p;
+      row.appendChild(idx);
+      row.appendChild(nm);
+
+      function mover(label, delta, disabled) {
+        var b = document.createElement("button");
+        b.className = "btn small ghost vmove";
+        b.textContent = label;
+        b.disabled = disabled;
+        b.addEventListener("click", function () {
+          var t = selectedVideos[i];
+          selectedVideos[i] = selectedVideos[i + delta];
+          selectedVideos[i + delta] = t;
+          selectedVideo = selectedVideos[0];
+          renderVideoList();
+        });
+        return b;
+      }
+      row.appendChild(mover("↑", -1, i === 0));
+      row.appendChild(mover("↓", 1, i === selectedVideos.length - 1));
+
+      var del = document.createElement("button");
+      del.className = "btn small ghost vmove";
+      del.textContent = "✕";
+      del.addEventListener("click", function () {
+        selectedVideos.splice(i, 1);
+        selectedVideo = selectedVideos[0] || null;
+        renderVideoList();
+        $("run").disabled = !selectedVideo;
+      });
+      row.appendChild(del);
+      box.appendChild(row);
+    });
+  }
+
   $("pick").addEventListener("click", function () {
-    var res = window.cep.fs.showOpenDialog(false, false, "選擇要剪輯的影片", "",
+    // 第一個參數 = 允許多選。錄長片被切成好幾個檔時,一次全選起來即可。
+    var res = window.cep.fs.showOpenDialog(true, false,
+      "選擇要剪輯的影片(可多選,會照檔名順序接成一支)", "",
       ["mp4", "mov", "mkv", "avi", "m4v"]);
     if (res && res.data && res.data.length) {
-      selectedVideo = res.data[0];
-      $("videoPath").textContent = selectedVideo;
-      $("run").disabled = false;
-      setStatus("已選擇影片,可以開始自動剪輯");
+      useVideos(sortNatural(res.data));
+      setStatus(selectedVideos.length > 1
+        ? "已選擇 " + selectedVideos.length + " 個檔,會接成一支處理。"
+          + "確認一下順序對不對,再按開始"
+        : "已選擇影片,可以開始自動剪輯");
     }
   });
 
@@ -308,9 +407,7 @@
   var VIDEO_EXT_RE = /\.(mp4|mov|mkv|avi|m4v|mxf|mts|m2ts|wmv)$/i;
 
   function useVideo(p, note) {
-    selectedVideo = p;
-    $("videoPath").textContent = p + (note || "");
-    $("run").disabled = false;
+    useVideos([p], note);
   }
 
   $("pickSelected").addEventListener("click", function () {
@@ -1059,11 +1156,13 @@
     setStatus("處理中…(第一次要下載模型,較久)", "busy");
     appendLog("▶ 已啟動,正在載入程式與模型…(這段沒動靜是正常的)\n");
 
-    var name = path.basename(selectedVideo, path.extname(selectedVideo));
+    var videos = selectedVideos.slice();
+    var name = outputNameOf(videos);
     // -u = 不緩衝輸出:Python 的進度訊息才會「即時」出現在下面,
-    // 不然會累積到一大段才一次噴出來,看起來像當掉
-    var proc = track(cp.spawn(PYTHON, ["-u", "pipeline.py", selectedVideo],
-      { cwd: PROJECT_DIR }));
+    // 不然會累積到一大段才一次噴出來,看起來像當掉。
+    // 多個檔一起傳進去,Python 那邊會接成一支處理(見 modules/sources.py)。
+    var proc = track(cp.spawn(PYTHON,
+      ["-u", "pipeline.py"].concat(videos), { cwd: PROJECT_DIR }));
     proc.stdout.on("data", function (d) { appendLog(d.toString()); });
     proc.stderr.on("data", function (d) { appendLog(d.toString()); });
     proc.on("error", function (e) {
@@ -1103,13 +1202,13 @@
           setStatus(base, "ok");
           beep(true);
           cleanOldSubtitleCopies(outDir, 3);
-          rememberVideo(selectedVideo);
-          runAutoSteps(selectedVideo, function (extra) {
+          rememberVideo(videos);
+          runAutoSteps(videos, function (extra) {
             setStatus(base + extra, "ok");
           });
         } else {
           setStatus("Python 跑完了,但匯入時出錯:" + r, "err");
-          rememberVideo(selectedVideo);
+          rememberVideo(videos);
         }
         $("run").disabled = false;
       });
@@ -1120,9 +1219,18 @@
   //  剪輯後工具 —— 活專案的「隨時可改」按鈕(P3/P4/P5)
   // =====================================================================
 
+  // output/ 底下的資料夾名稱。**必須跟 Python 的 sources.VideoSource.name
+  // 算出完全一樣的字串** —— 面板是靠這個名字去找報告、字幕、XML 的。
+  // 對不上的話面板會說「找不到報告」,而 Python 那邊其實好好地產出來了,
+  // 只是放在另一個名字的資料夾裡。
+  function outputNameOf(paths) {
+    var list = [].concat(paths);
+    var stem = path.basename(list[0], path.extname(list[0]));
+    return list.length > 1 ? stem + "_合併" + list.length + "支" : stem;
+  }
+
   function outDirOf(video) {
-    return path.join(PROJECT_DIR, "output",
-      path.basename(video, path.extname(video)));
+    return path.join(PROJECT_DIR, "output", outputNameOf(video));
   }
 
   // 匯入字幕時會複製成帶時間戳的新檔(見 host.jsx 的說明),
@@ -1150,24 +1258,42 @@
     return "";
   }
 
-  // 記住最近處理的影片:跑完出現「剪輯後工具」,面板重開也還在
-  function rememberVideo(video) {
-    if (!video) return;
-    lastVideo = video;
-    try { window.localStorage.setItem("pr_last_video", video); } catch (e) {}
+  // 記住最近處理的影片:跑完出現「剪輯後工具」,面板重開也還在。
+  //
+  // ⚠️ 要記「整份清單」而不是只記第一個檔。「重算剪輯」是重跑一次
+  // pipeline.py,只傳第一個檔的話,重算出來的是「只有第一段」的短片,
+  // 但按鈕上寫的是「用新設定重算」—— 你會以為是設定改壞了。
+  function rememberVideo(videos) {
+    var list = [].concat(videos || []).filter(Boolean);
+    if (!list.length) return;
+    lastVideos = list;
+    try {
+      window.localStorage.setItem("pr_last_videos", JSON.stringify(list));
+    } catch (e) {}
     $("afterSec").style.display = "block";
-    $("afterVideo").textContent = "目前影片:" + path.basename(video);
+    $("afterVideo").textContent = "目前影片:"
+      + (list.length > 1
+         ? path.basename(list[0]) + " 等 " + list.length + " 個檔(已接成一支)"
+         : path.basename(list[0]));
   }
+
   (function restoreLast() {
-    var v = null;
-    try { v = window.localStorage.getItem("pr_last_video"); } catch (e) {}
-    if (v && fs.existsSync(v) && fs.existsSync(outDirOf(v))) {
-      rememberVideo(v);
-      // 順便接續上次的選擇:重開面板不用重選,直接就能重跑或用剪輯後工具
-      selectedVideo = v;
-      $("videoPath").textContent = v + "(上次處理的影片,可直接用)";
-      $("run").disabled = false;
-    }
+    var list = null;
+    try {
+      var raw = window.localStorage.getItem("pr_last_videos");
+      if (raw) list = JSON.parse(raw);
+      // 舊版只存單一路徑,升級上來的人要接得住
+      if (!list) {
+        var one = window.localStorage.getItem("pr_last_video");
+        if (one) list = [one];
+      }
+    } catch (e) {}
+    if (!list || !list.length) return;
+    var allThere = list.every(function (p) { return fs.existsSync(p); });
+    if (!allThere || !fs.existsSync(outDirOf(list))) return;
+    rememberVideo(list);
+    // 順便接續上次的選擇:重開面板不用重選,直接就能重跑或用剪輯後工具
+    useVideos(list, list.length > 1 ? "" : "(上次處理的影片,可直接用)");
   })();
 
   // 剪輯後工具區塊的摺疊
@@ -1192,11 +1318,11 @@
 
   // ---------- 清除快取 ----------
   $("clearCache").addEventListener("click", function () {
-    if (!lastVideo) return;
+    if (!lastVideos.length) return;
     setAfterButtons(false);
     afterSay("清除中…", true);
     cp.execFile(PYTHON,
-      ["-m", "modules.workspace", "clear", outDirOf(lastVideo), "asr"],
+      ["-m", "modules.workspace", "clear", outDirOf(lastVideos), "asr"],
       { cwd: PROJECT_DIR },
       function (err, stdout, stderr) {
         var msg = String(stdout || stderr || "").trim();
@@ -1242,13 +1368,13 @@
   }
 
   $("openReport").addEventListener("click", function () {
-    if (!lastVideo) return;
-    openReportFor(lastVideo, false);
+    if (!lastVideos.length) return;
+    openReportFor(lastVideos, false);
   });
 
   // ---------- P3:重算剪輯(快)→ 匯入新序列 ----------
   $("rebuild").addEventListener("click", function () {
-    if (!lastVideo) return;
+    if (!lastVideos.length) return;
     setAfterButtons(false);
     // 文案不能寫死「不重跑辨識」:改了辨識或聲音設定時,程式會自動重跑
     // 那一段(要幾分鐘)。講死了你會以為當掉。
@@ -1261,7 +1387,8 @@
       // --stamp:序列名加時間。重算刻意保留舊序列讓你比較,
       // 全部同名就分不出哪條是剛剛那次了。
       var proc = track(cp.spawn(PYTHON,
-        ["-u", "pipeline.py", lastVideo, "--skip-audio", "--stamp"],
+        ["-u", "pipeline.py"].concat(lastVideos)
+          .concat(["--skip-audio", "--stamp"]),
         { cwd: PROJECT_DIR }));
       proc.stdout.on("data", function (d) { appendLog(d.toString()); });
       proc.stderr.on("data", function (d) { appendLog(d.toString()); });
@@ -1281,7 +1408,7 @@
           beep(false);
           setAfterButtons(true); return;
         }
-        var outDir = outDirOf(lastVideo);
+        var outDir = outDirOf(lastVideos);
         var xml = toFwd(path.join(outDir, "04_project.xml"));
         var srt = toFwd(path.join(outDir, "04_subtitles.srt"));
         // 重算鈕刻意「不」覆蓋(第三個參數 "0"):留著舊序列可以兩條互相比較、
@@ -1294,7 +1421,7 @@
               afterSay(base, true);
               beep(true);
               cleanOldSubtitleCopies(outDir, 3);
-              runAutoSteps(lastVideo, function (extra, ok) {
+              runAutoSteps(lastVideos, function (extra, ok) {
                 afterSay(base + extra, ok !== false);
               });
             } else { afterSay("重算完成,但匯入出錯:" + r, false); }
@@ -1411,10 +1538,10 @@
 
   // ---------- P5:用目前序列的實際版面產生字幕 ----------
   $("subsFromSeq").addEventListener("click", function () {
-    if (!lastVideo) return;
+    if (!lastVideos.length) return;
     setAfterButtons(false);
     afterSay("讀取目前序列的版面…", true);
-    var outDir = outDirOf(lastVideo);
+    var outDir = outDirOf(lastVideos);
     // 中繼檔放在 _work/ 子資料夾(見 modules/workspace.py),
     // 最外層只留你會打開的東西
     var workDir = path.join(outDir, "_work");

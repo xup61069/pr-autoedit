@@ -104,9 +104,10 @@ python -m tests.test_e2e_smoke  # 動了任何東西,跑這個確認主幹沒斷
 node tests/test_panel_voicefx.js  # 動了 host.jsx 的掛效果邏輯或 PREMIERE_VOICE_FX
 node tests/test_panel_vocab.js    # 動了提示詞長度估算或教學類型編輯器
 node tests/test_panel_stop.js     # 動了停止鈕或子行程的收尾邏輯
+node tests/test_panel_merge.js    # 動了多檔合併、輸出資料夾命名或檔案排序
 ```
 
-⚠️ **九套全部都要跑,而且不要接管線。**`python -m tests.xxx | tail` 的離開碼
+⚠️ **十套全部都要跑,而且不要接管線。**`python -m tests.xxx | tail` 的離開碼
 是 `tail` 的,失敗的測試會被靜靜吃掉。這份清單以前只列六套,漏的正好是
 `test_music` —— 守著畫面判定與雜音剪除的那一套,結果 live 模式的標籤 bug
 在「測試全綠」的狀態下活了很久。
