@@ -150,7 +150,9 @@ FIELDS = [
     {"key": "VST_CHAIN", "label": "VST 外掛路徑", "type": "vstlist",
      "tier": "advanced", "group": "降噪外掛(VST)",
      "show_if": {"AUDIO_MODE": ["vst"]},
-     "hint": ".vst3 完整路徑,依序套用。要指到內層那顆檔,不是外層資料夾"},
+     "hint": ".vst3 完整路徑,依序套用。要指到內層那顆檔,不是外層資料夾。"
+             "裝了 VoiceFX 的話會自動找到,不用自己填"
+             "(免費,要自己裝:xaymar.itch.io/voicefx,需 NVIDIA RTX 顯卡)"},
     {"key": "VOICEFX_MODE", "label": "降噪:消除對象", "type": "select",
      "tier": "advanced", "group": "降噪外掛(VST)",
      "options": ["消噪音", "消回音", "兩者都消"],

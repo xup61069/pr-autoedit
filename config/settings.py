@@ -350,6 +350,20 @@ AUDIO_MODE = "vst"
 #           之後在 Premiere 裡改不了。
 VST_BAKE = False
 
+# VoiceFX 的下載處(免費,作者 Xaymar):https://xaymar.itch.io/voicefx
+#
+# 為什麼不直接把它包進這個專案裡:
+#   1. 它是「免費」但不是「可自由散布」——沒有授權讓第三方轉發,
+#      而且它是 itch.io 的「自訂價格」形式,轉發等於繞過作者的發佈管道。
+#   2. 它用了 Steinberg 的 VST SDK(VST 是 Steinberg 的註冊商標),
+#      本專案是 MIT,把一份專有二進位檔塞進來會把授權關係弄得很混亂。
+#   3. 它只在 NVIDIA RTX(要 Tensor 核心)上能跑。包進來的話,用 AMD、Intel
+#      或舊 NVIDIA 卡的人會下載到一個對他們毫無用處的大檔案。
+#   4. 專案目前已轉手、處於停止開發狀態,把使用者綁在一個沒人維護的
+#      二進位檔上不是好事。
+#   5. 這個專案的預設路線本來就不需要它——人聲處理預設用 Premiere 內建的
+#      降噪→EQ→壓縮器(見下面 PREMIERE_VOICE_FX),通用、不吃顯卡記憶體。
+# 所以維持「裝了就自動找到、沒裝也完全不影響」。
 def _find_voicefx() -> list[str]:
     """到標準 VST3 資料夾裡找 VoiceFX(NVIDIA AI 降噪),找到就回傳它的路徑。
 
