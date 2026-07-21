@@ -29,6 +29,6 @@ if errorlevel 1 (
 echo.
 echo [DONE] Panel linked.
 echo Next: 1) run enable-debug-mode.reg once  2) restart Premiere Pro
-echo       3) Window ^> Extensions ^> PR AutoEdit
+echo       3) Window ^> Extensions ^> (the panel; its menu name is in Chinese)
 echo.
 pause

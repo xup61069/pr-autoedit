@@ -42,7 +42,7 @@ cd /d D:\pr-autoedit
 ```
 git init
 git add .
-git commit -m "初始版本:PR 自動剪輯工具"
+git commit -m "初始版本:PR剪教學一條龍"
 git branch -M main
 git remote add origin https://github.com/你的帳號/pr-autoedit.git
 git push -u origin main
