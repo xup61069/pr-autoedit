@@ -186,8 +186,10 @@ def main():
 
     # 畫面活動:沒講話的段落,靠畫面決定要加速(有在示範)還是剪掉(純空檔)。
     # 用「原始影片」而不是混音後的檔——混音後的檔這時還沒產生。
+    # 只有停頓處理方式選「看畫面決定」才需要掃畫面 —— 選一律快轉或一律剪掉時
+    # 畫面資訊派不上用場,掃了只是白白多花時間。
     motion = []
-    if getattr(cfg, "MOTION_DETECT", False):
+    if cfg.SILENCE_ACTION == "auto":
         from modules.video_probe import detect_motion_regions
         print("  分析畫面活動…(第一次要掃過整支影片,之後會沿用)")
         motion = detect_motion_regions(

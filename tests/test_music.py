@@ -160,12 +160,51 @@ def test_motion_turns_silence_into_speed():
 
 
 def test_motion_static_stays_deleted():
-    """畫面靜止的靜音段 -> 照舊剪掉"""
+    """畫面靜止的靜音段 -> 剪掉"""
     from core.decision import apply_motion
     cfg.MOTION_MIN_SEC = 0.5
     out = apply_motion([_sil(0, 300)], [(1000, 1100)], 30.0)   # 活動不重疊
     assert out[0].action == "delete" and out[0].reason == "silence"
-    print("  ✓ 畫面靜止 -> 照舊剪掉")
+    print("  ✓ 畫面靜止 -> 剪掉")
+
+
+def test_speed_mode_never_deletes():
+    """選「一律快轉」時,沒有任何停頓可以被改成剪掉。
+
+    這是以前真的壞掉的地方:畫面判定是獨立開關,不管使用者選什麼,
+    畫面靜止的停頓都會被改寫成 delete —— 你設定「什麼都不刪、只壓縮」,
+    結果 5 秒的停頓整段消失,而且審閱報告的 reason 一樣是 silence,
+    看不出來是畫面判定幹的。現在三選一,speed 就真的只有 speed。
+
+    註:這個測試刻意走完整的 build_segments,而不是直接呼叫 apply_motion
+    —— 壞掉的是「兩個設定的交互作用」,只測單一函式永遠測不到。"""
+    from core.models import Word
+    from core.decision import build_segments
+    old = cfg.SILENCE_ACTION, cfg.SILENCE_THRESHOLD_SEC, cfg.SILENCE_PADDING_SEC
+    cfg.SILENCE_ACTION = "speed"
+    cfg.SILENCE_THRESHOLD_SEC = 1.2
+    cfg.SILENCE_PADDING_SEC = 0.15
+    fps = 30.0
+    # 講一句 -> 停 5 秒 -> 再講一句
+    words = [Word("大家好", 0.0, 1.0), Word("接下來", 6.0, 7.0)]
+    segs = build_segments(words, fps, int(8.0 * fps))
+    cfg.SILENCE_ACTION, cfg.SILENCE_THRESHOLD_SEC, cfg.SILENCE_PADDING_SEC = old
+
+    assert not any(s.action == "delete" and s.reason == "silence" for s in segs), \
+        "選一律快轉時,不該有任何停頓被剪掉"
+    assert any(s.action == "speed" for s in segs), "5 秒停頓應該要變成快轉"
+    print("  ✓ 選「一律快轉」時,沒有停頓被偷偷剪掉")
+
+
+def test_auto_mode_only_scans_motion_when_needed():
+    """畫面掃描只在「看畫面決定」時才做 —— 選另外兩種還去掃整支影片
+    是白白多花好幾十秒,而且掃了也用不到。"""
+    import pipeline, inspect
+    src = inspect.getsource(pipeline.main)
+    assert 'cfg.SILENCE_ACTION == "auto"' in src, \
+        "畫面掃描的開關應該綁在 SILENCE_ACTION == auto"
+    assert "MOTION_DETECT" not in src, "不該再看已經廢掉的 MOTION_DETECT"
+    print("  ✓ 只有選「看畫面決定」時才掃描畫面")
 
 
 def test_motion_ignores_short_segments():
@@ -219,6 +258,8 @@ if __name__ == "__main__":
     test_quiet_ignores_short_pause()
     test_motion_turns_silence_into_speed()
     test_motion_static_stays_deleted()
+    test_speed_mode_never_deletes()
+    test_auto_mode_only_scans_motion_when_needed()
     test_motion_ignores_short_segments()
     test_motion_never_touches_music()
     test_motion_regions_from_diffs()

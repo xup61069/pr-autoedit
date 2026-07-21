@@ -99,7 +99,7 @@ python pipeline.py 你的影片.mp4
 或直接改 `config/settings.py`。常用的幾個:
 
 - `VOCAB_CATEGORIES` / `CUSTOM_VOCAB` —— 教學類型詞庫 + 你自己的術語,改善辨識最有效的一招
-- `SILENCE_THRESHOLD_SEC` / `SILENCE_ACTION` / `SILENCE_SPEED_FACTOR` —— 停頓多久算靜音、要快轉還是剪掉、快轉幾倍
+- `SILENCE_THRESHOLD_SEC` / `SILENCE_ACTION` / `SILENCE_SPEED_FACTOR` —— 停頓多久算靜音;要看畫面決定(`auto`,建議)、一律快轉還是一律剪掉;快轉幾倍
 - `MUSIC_DETECT` / `MUSIC_DB_ABOVE_FLOOR` —— 音樂保護開關與靈敏度
 - `ASR_ENGINE` —— 辨識引擎:`faster-whisper`(預設,中英夾雜較好)或 `funasr`(純中文備選)
 - `PREMIERE_VOICE_FX` —— 進 Premiere 後幫人聲掛哪些效果(預設是內建的降噪 → EQ → 壓縮器,通用且不吃顯卡記憶體)

@@ -115,7 +115,10 @@ python pipeline.py D:\影片\我的教學_0718.mp4
   再把你常講的頻道名、人名、慣用詞列進 CUSTOM_VOCAB
   (例如 MIDI 才不會被聽成「謎底」)。
 - `SILENCE_THRESHOLD_SEC`:靜音門檻,講話慢的人調高(1.5),快的人調低(1.0)
-- `SILENCE_ACTION`:`"speed"`=靜音快轉、`"delete"`=直接剪掉
+- `SILENCE_ACTION`:停頓怎麼處理,三選一 ——
+  `"auto"`=看畫面決定(建議:畫面在動就快轉帶過、靜止才剪掉,
+  你默默示範操作的那幾秒不會消失)、`"speed"`=一律快轉什麼都不刪、
+  `"delete"`=一律剪掉
 - `MUTE_SPEED_AUDIO`:快轉段是否靜音(True 可避免加速產生的尖聲)
 - `SILENCE_SPEED_FACTOR`:快轉倍率(預設 6.0)
 - `FILLERS_CONDITIONAL`:加入你的個人口頭禪

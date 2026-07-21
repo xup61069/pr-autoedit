@@ -52,8 +52,18 @@ DELIVERY_MODE = "baked"
 # 相鄰兩詞間隔超過這個秒數,視為靜音空隙
 SILENCE_THRESHOLD_SEC = 1.2
 
-# 靜音的處理方式:"delete"=直接剪掉  "speed"=快轉
-SILENCE_ACTION = "speed"
+# 停頓的處理方式,三選一:
+#   "auto"   看畫面決定(建議):畫面在動 -> 快轉帶過、畫面靜止 -> 剪掉。
+#            你默默示範操作的那幾秒(拉推桿、開選單、比對前後)沒有講話,
+#            只聽聲音的話會被當成停頓剪掉,內容真的消失而且不容易發現。
+#            靈敏度等細節見下面「畫面活動」那一段。
+#   "speed"  一律快轉:什麼都不刪,只是把停頓壓縮。最保守。
+#   "delete" 一律剪掉:最兇,但默默示範的畫面也會一起不見。
+#
+# 註:這三個是互斥的。以前「看畫面決定」是另一個獨立開關(MOTION_DETECT),
+# 結果它會蓋掉這裡的選擇——你選了快轉,畫面靜止的停頓還是被剪掉,
+# 而且審閱報告看不出來。併成一個選項之後,選什麼就是什麼。
+SILENCE_ACTION = "auto"
 
 # 若 SILENCE_ACTION="speed",快轉倍率
 SILENCE_SPEED_FACTOR = 6.0
@@ -86,16 +96,10 @@ MUSIC_DB_ABOVE_FLOOR = 12.0
 MUSIC_MIN_SEC = 1.2
 
 # ============================================================
-# 畫面活動偵測(沒講話時,看畫面決定要加速還是剪掉)
+# 畫面活動(只有 SILENCE_ACTION = "auto" 時才用得到)
 # ============================================================
-# 決策引擎只聽聲音,所以你默默示範操作的那幾秒——拉推桿、開選單、
-# 比對前後差異——會被當成停頓直接剪掉。內容真的消失,而且不容易發現。
-# 開啟後,沒講話的段落會再看一次畫面:
-#     畫面在動   -> 加速帶過(看得到,但不佔時間)
-#     畫面靜止   -> 照舊剪掉
-
-# 是否啟用
-MOTION_DETECT = True
+# 「看畫面決定」怎麼判斷畫面算不算在動。選了別的停頓處理方式時,
+# 這一段整段沒有作用。
 
 # 每秒取樣幾張畫面來比對。4 張已足夠抓到操作動作;調高只會變慢。
 MOTION_SAMPLE_FPS = 4.0
@@ -112,9 +116,9 @@ MOTION_SAMPLE_FPS = 4.0
 # 誤刪掉的示範內容卻救不回來。
 MOTION_SENSITIVITY = 0.5
 
-# 短於這個秒數的段落不套用畫面判定,維持原本的處理方式。
-# 主要是擋掉能量微剪挖出來的零點幾秒小停頓 —— 那些轉成變速沒有意義,
-# 只會在 Premiere 產生大量細碎的變速片段(效能地雷)。
+# 短於這個秒數的停頓不看畫面,一律快轉帶過。
+# 主要是擋掉能量微剪挖出來的零點幾秒小停頓 —— 那些不管怎麼判都沒有意義,
+# 轉成變速還會在 Premiere 產生大量細碎的變速片段(效能地雷)。
 MOTION_MIN_SEC = 0.5
 
 # ============================================================
@@ -424,7 +428,7 @@ PRESET_KEYS = [
     "MICRO_TRIM", "MICRO_TRIM_KEEP_SEC", "MICRO_TRIM_MIN_SEC",
     "MICRO_TRIM_DB_BELOW_SPEECH",
     "MUSIC_DETECT", "MUSIC_MIN_SEC", "MUSIC_DB_ABOVE_FLOOR",
-    "MOTION_DETECT", "MOTION_SENSITIVITY", "MOTION_MIN_SEC",
+    "MOTION_SENSITIVITY", "MOTION_MIN_SEC",
     "FILLER_PAUSE_SEC", "FILLER_ISOLATED_GAP_SEC", "RETAKE_DETECT",
 ]
 
@@ -433,7 +437,8 @@ PRESET_KEYS = [
 SETTING_PRESETS = {
     "標準": {},
     "激進(跳接風格)": {
-        "SILENCE_ACTION": "delete",
+        # 看畫面決定:靜止的停頓剪掉,但你默默示範的那幾秒還是保得住
+        "SILENCE_ACTION": "auto",
         "SILENCE_THRESHOLD_SEC": 0.3,
         "SILENCE_PADDING_SEC": 0.0,
         "MICRO_TRIM_KEEP_SEC": 0.04,
@@ -443,6 +448,9 @@ SETTING_PRESETS = {
         # 激進模式也要保住示範畫面,但門檻抓嚴一點(滑鼠晃一下不算)
         "MOTION_SENSITIVITY": 1.0,
     },
+    # 這兩個組合的名字就承諾了「不刪東西」,所以一律快轉、不看畫面。
+    # (以前它們寫 speed 卻又吃到獨立的畫面偵測開關,結果畫面靜止的停頓
+    #  照樣被剪掉——名字跟實際行為是反的。)
     "保守(保留換氣)": {
         "SILENCE_ACTION": "speed",
         "SILENCE_SPEED_FACTOR": 6.0,
@@ -451,7 +459,6 @@ SETTING_PRESETS = {
         "MICRO_TRIM_KEEP_SEC": 0.12,
         "MICRO_TRIM_MIN_SEC": 0.4,
         "MICRO_TRIM_DB_BELOW_SPEECH": 18.0,
-        "MOTION_SENSITIVITY": 0.3,        # 敏感一點,寧可加速也不剪掉
     },
     "完整保留(僅壓縮停頓)": {
         "SILENCE_ACTION": "speed",
@@ -509,6 +516,14 @@ if _os.path.exists(_json_path):
                     globals()[_k] = _v
     except (ValueError, OSError):
         pass
+
+# 舊設定檔相容:「看畫面決定」以前是一個獨立開關 MOTION_DETECT,
+# 現在併進 SILENCE_ACTION 的第三個選項 "auto"。
+# 舊設定檔若特地把它關掉,代表「我不要看畫面」——那就把 auto 降回單純快轉,
+# 免得更新之後又被偷偷打開。沒設過這個鍵的人不受影響。
+if globals().get("MOTION_DETECT") is False and SILENCE_ACTION == "auto":
+    SILENCE_ACTION = "speed"
+
 
 def changed_settings() -> list[str]:
     """現在有哪些設定跟內建預設不一樣。

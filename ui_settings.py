@@ -74,14 +74,17 @@ FIELDS = [
      "hint": "baked:直接剪好(建議),改設定後按「重算剪輯」幾秒出新序列。"
              "live:全部保留、只上顏色標籤,自行批次處理(片段多,長片會卡)"},
     {"key": "SILENCE_ACTION", "label": "停頓處理方式", "type": "select",
-     "tier": "common", "group": "剪輯", "options": ["speed", "delete"],
-     "hint": "speed 快轉帶過,delete 直接剪掉"},
+     "tier": "common", "group": "剪輯", "options": ["auto", "speed", "delete"],
+     "hint": "auto 看畫面決定(建議):畫面在動就快轉帶過、靜止才剪掉,"
+             "默默示範操作的那幾秒不會消失。"
+             "speed 一律快轉、什麼都不刪。delete 一律剪掉、最兇"},
     {"key": "SILENCE_SPEED_FACTOR", "label": "快轉倍率", "type": "number",
      "tier": "common", "group": "剪輯", "min": 1, "max": 20, "step": 0.5,
-     "soft": True, "show_if": {"SILENCE_ACTION": ["speed"]},
+     "soft": True, "show_if": {"SILENCE_ACTION": ["auto", "speed"]},
      "hint": "停頓段的加速倍率"},
     {"key": "MUTE_SPEED_AUDIO", "label": "快轉段消音", "type": "bool",
-     "tier": "common", "group": "剪輯", "show_if": {"SILENCE_ACTION": ["speed"]},
+     "tier": "common", "group": "剪輯",
+     "show_if": {"SILENCE_ACTION": ["auto", "speed"]},
      "hint": "避免加速造成的變調尖聲。建議開啟"},
     {"key": "SILENCE_THRESHOLD_SEC", "label": "靜音判定門檻", "type": "number",
      "tier": "common", "group": "剪輯", "min": 0.1, "max": 5, "step": 0.1,
@@ -90,10 +93,9 @@ FIELDS = [
     {"key": "MUSIC_DETECT", "label": "音樂/音效保護", "type": "bool",
      "tier": "common", "group": "剪輯",
      "hint": "保護無語音但有聲音的段落(示範音樂、音效),避免被當停頓剪掉"},
-    {"key": "MOTION_DETECT", "label": "無語音時依畫面判定", "type": "bool",
-     "tier": "common", "group": "剪輯",
-     "hint": "建議開啟。沒講話的段落再看一次畫面:畫面在動(你在示範操作)改為"
-             "加速帶過,畫面靜止才剪掉。避免默默示範的片段被整段剪掉"},
+    # 註:「無語音時依畫面判定」以前是這裡的一個獨立勾選,現在併進上面的
+    # 「停頓處理方式 = auto」。兩個設定並存時會互相蓋掉(選了快轉,畫面靜止的
+    # 停頓還是被剪掉),而且報告看不出來,所以做成三選一。
     {"key": "MICRO_TRIM", "label": "能量微剪", "type": "bool",
      "tier": "common", "group": "剪輯",
      "hint": "剪更兇的主力,建議開啟。連句中無聲的小空檔也剪掉,"
@@ -192,18 +194,18 @@ FIELDS = [
      "tier": "advanced", "group": "審閱標記", "min": 0, "max": 1, "step": 0.05,
      "hint": "只有把握度低於此值的切點才下 marker"},
 
-    # --- 分組:畫面活動 ---
+    # --- 分組:畫面活動(只有停頓處理方式選 auto 時才有作用)---
     {"key": "MOTION_SENSITIVITY", "label": "畫面活動靈敏度", "type": "number",
      "tier": "advanced", "group": "畫面活動", "min": 0.1, "max": 5, "step": 0.1,
-     "soft": True, "show_if": {"MOTION_DETECT": [True]},
+     "soft": True, "show_if": {"SILENCE_ACTION": ["auto"]},
      "hint": "越小越敏感。示範被剪掉了調小;滑鼠晃一下就不剪調大"},
     {"key": "MOTION_MIN_SEC", "label": "畫面判定最短長度", "type": "number",
      "tier": "advanced", "group": "畫面活動", "min": 0.2, "max": 3, "step": 0.1,
-     "soft": True, "show_if": {"MOTION_DETECT": [True]},
-     "hint": "短於此秒數的停頓維持原本處理,避免產生大量細碎變速片段"},
+     "soft": True, "show_if": {"SILENCE_ACTION": ["auto"]},
+     "hint": "短於此秒數的停頓不看畫面,一律快轉帶過"},
     {"key": "MOTION_SAMPLE_FPS", "label": "畫面取樣頻率", "type": "number",
      "tier": "advanced", "group": "畫面活動", "min": 1, "max": 10, "step": 1,
-     "soft": True, "show_if": {"MOTION_DETECT": [True]},
+     "soft": True, "show_if": {"SILENCE_ACTION": ["auto"]},
      "hint": "每秒比對幾張畫面。4 張已足夠,調高只會變慢"},
 
     # --- 分組:音樂/音效保護 ---
