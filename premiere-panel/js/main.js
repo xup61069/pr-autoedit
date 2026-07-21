@@ -179,7 +179,7 @@
     { re: /auto-editor/i,
       msg: "剪輯引擎 auto-editor 執行失敗。\n" +
            "  → 在命令列執行:pip install auto-editor" },
-    { re: /\[WinError 2\]|ffmpeg.*(not found|不是內部或外部命令)|'ffmpeg' is not recognized/i,
+    { re: /\[WinError 2\]|找不到 ffmpeg|ffmpeg.*(not found|不是內部或外部命令)|'ffmpeg' is not recognized/i,
       msg: "找不到 ffmpeg(處理影音的必要工具)。\n" +
            "  → 用系統管理員身分執行:winget install Gyan.FFmpeg\n" +
            "     裝完要重開 Premiere,面板才吃得到新的 PATH" },

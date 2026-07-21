@@ -297,6 +297,44 @@ def test_motion_never_touches_music():
     print("  ✓ 音樂段與語音段不受影響")
 
 
+def test_motion_failure_and_emptiness_are_announced():
+    """畫面偵測「失敗」與「一段活動都沒有」都必須講出來。
+
+    這兩種情況下 apply_motion 根本不會被呼叫,所有停頓維持快轉 ——
+    等於一秒都沒剪掉。使用者選的是「看畫面決定」,拿到的卻是「一律快轉」,
+    而報告上只會顯示「畫面在動改加速 0 段」,分不出是真的沒活動、
+    還是這一步壓根沒跑成功。安靜降級 = 使用者以為程式壞了。"""
+    import pipeline, inspect
+    src = inspect.getsource(pipeline.main)
+    assert "motion_failed" in src, "畫面偵測失敗要能被辨識出來"
+    assert "except Exception" in src, \
+        "畫面偵測失敗不該讓整條管線爆掉(它只是加分項)"
+    assert "elif cfg.SILENCE_ACTION == \"auto\" and not motion_failed" in src, \
+        "掃描成功但零活動時,要另外告訴使用者這次沒有剪掉任何停頓"
+    print("  ✓ 畫面偵測失敗或零活動時都會明說,不會安靜降級")
+
+
+def test_motion_probe_error_is_readable():
+    """ffmpeg 讀不了畫面時,錯誤訊息要帶著 ffmpeg 自己的說法。
+
+    以前直接讓 CalledProcessError 冒出去,訊息只有「returned non-zero
+    exit status 1」加一長串指令,真正的原因被 capture_output 吃在 stderr 裡。
+    對零程式基礎的人那等於沒有訊息,面板的錯誤翻譯表也對不上任何一條。"""
+    from modules.video_probe import _sample_frames
+    try:
+        _sample_frames(os.path.join(os.path.dirname(__file__),
+                                    "_this_file_does_not_exist.mp4"), 4.0)
+    except RuntimeError as e:
+        msg = str(e)
+        assert "ffmpeg" in msg, f"訊息沒提到是誰失敗的:{msg}"
+        assert len(msg) > 30, f"訊息太空洞,等於沒說:{msg}"
+        print("  ✓ 畫面偵測失敗時給得出看得懂的原因")
+        return
+    except Exception as e:
+        raise AssertionError(f"應該丟 RuntimeError,實際丟 {type(e).__name__}")
+    raise AssertionError("讀不存在的檔案居然沒有失敗")
+
+
 def test_motion_regions_from_diffs():
     """變化量 -> 區間:超過門檻的連續時段才算,太短的丟掉"""
     from modules.video_probe import motion_regions_from_diffs
@@ -333,5 +371,7 @@ if __name__ == "__main__":
     test_auto_mode_only_scans_motion_when_needed()
     test_motion_ignores_short_segments()
     test_motion_never_touches_music()
+    test_motion_failure_and_emptiness_are_announced()
+    test_motion_probe_error_is_readable()
     test_motion_regions_from_diffs()
     print("\n全部通過 ✓  音樂保護、能量微剪、畫面活動判定皆正確。")

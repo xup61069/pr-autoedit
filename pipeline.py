@@ -188,12 +188,28 @@ def main():
     # 用「原始影片」而不是混音後的檔——混音後的檔這時還沒產生。
     # 只有停頓處理方式選「看畫面決定」才需要掃畫面 —— 選一律快轉或一律剪掉時
     # 畫面資訊派不上用場,掃了只是白白多花時間。
+    #
+    # 這一步「失敗」和「找不到東西」都必須講出來。停頓處理選 auto 時,
+    # 沒有畫面資訊就等於全部停頓都只快轉、一秒都不剪 —— 產出會跟你的預期
+    # 差非常多,而報告上只會看到「畫面在動改加速 0 段」,你分不出那是
+    # 「真的沒有活動」還是「這一步根本沒跑成功」。
     motion = []
+    motion_failed = False
     if cfg.SILENCE_ACTION == "auto":
         from modules.video_probe import detect_motion_regions
         print("  分析畫面活動…(第一次要掃過整支影片,之後會沿用)")
-        motion = detect_motion_regions(
-            args.video, fps, cache_json=wpath(work, "02_motion.json"))
+        try:
+            motion = detect_motion_regions(
+                args.video, fps, cache_json=wpath(work, "02_motion.json"))
+        except Exception as e:
+            # 掃畫面只是加分項,不該讓整支片一個產物都拿不到。
+            # 但也不能安靜地降級——降級後的結果跟你選的設定不一樣。
+            motion_failed = True
+            print(f"  ⚠ 畫面分析失敗,這次改成「一律快轉」處理停頓"
+                  f"(不會剪掉任何停頓)。\n"
+                  f"    技術原因:{type(e).__name__}: {e}\n"
+                  f"    影片能正常播放的話,把「停頓處理方式」改成"
+                  f"「一律剪掉」或「一律快轉」就能避開這一步。")
 
     # --- 3. 決策引擎 ---
     print("[3/5] 決策引擎")
@@ -230,6 +246,14 @@ def main():
                          if s.reason == "silence_motion") / fps
         print(f"  畫面活動:{n_moving} 段沒講話但畫面在動,改為加速不剪掉"
               f"(共 {moving_sec / 60:.1f} 分)")
+    elif cfg.SILENCE_ACTION == "auto" and not motion_failed:
+        # 掃描成功但一段活動都沒有。整支片畫面很靜(純投影片、固定攝影機)、
+        # 或靈敏度調得太高都會這樣。此時 apply_motion 根本不會被呼叫,
+        # 所有停頓維持快轉 —— 也就是「一秒都沒剪掉」,必須講出來。
+        print("  ⚠ 畫面活動:整支片沒有偵測到任何畫面變化,"
+              "所以這次的停頓全部用快轉帶過、沒有剪掉任何一段。\n"
+              "    這才是你要的就不用理它;想把靜止的停頓剪掉,"
+              "把進階設定的「畫面活動靈敏度」調小再按重算剪輯。")
 
     n_del = sum(1 for s in segments if s.action == "delete")
     n_spd = sum(1 for s in segments if s.action == "speed")
