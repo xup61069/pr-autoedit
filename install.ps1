@@ -14,6 +14,16 @@ function Have($name) {
     try { return [bool](Get-Command $name -ErrorAction Stop) } catch { return $false }
 }
 
+function RealPy($exe) {
+    # 這個指令是不是「真的能用的 Python 3」?
+    # Windows 內建一個假的 python 捷徑(給市集用的):叫得動、Get-Command 也找得到,
+    # 但 --version 什麼都不印、python -m venv 會直接失敗。只有真的印得出
+    # "Python 3.x" 才算數;印不出來就回 $null,當它沒裝。
+    try { $v = (& $exe --version 2>&1 | Out-String).Trim() } catch { return $null }
+    if ($v -match 'Python\s+3\.\d+') { return $v }
+    return $null
+}
+
 Say ""
 Say "==============================================="
 Say "  PR 剪教學一條龍 —— 安裝程式"
@@ -29,25 +39,35 @@ Say ""
 # 1. Python
 # ---------------------------------------------------------------------
 Say "[1/6] 檢查 Python..."
-if (-not (Have "python")) {
-    Warn "找不到 Python,嘗試自動安裝..."
+# 決定用哪個指令當底層 Python。優先用 py 啟動器 —— 它不會指到市集的假捷徑,
+# 最可靠;沒有 py 才退回 python(而且要驗過真的印得出版本,見 RealPy)。
+$basePy = $null; $pyver = $null
+if (Have "py")    { $pyver = RealPy "py";     if ($pyver) { $basePy = "py" } }
+if (-not $basePy) { $pyver = RealPy "python"; if ($pyver) { $basePy = "python" } }
+
+if (-not $basePy) {
+    Warn "找不到可用的 Python(或被 Windows 的假 python 捷徑擋住),嘗試自動安裝..."
     if (Have "winget") {
         winget install --id Python.Python.3.12 --scope user --accept-source-agreements --accept-package-agreements
         $env:Path = [Environment]::GetEnvironmentVariable("Path", "User") + ";" +
                     [Environment]::GetEnvironmentVariable("Path", "Machine")
     }
-    if (-not (Have "python")) {
-        Bad "Python 沒裝成功。"
-        Say ""
-        Say "  請自己到 https://www.python.org/downloads/ 下載安裝,"
-        Say "  安裝畫面第一頁一定要勾選 [Add python.exe to PATH],"
-        Say "  裝完後重新執行「安裝.bat」。"
-        Say ""
-        Read-Host "按 Enter 關閉"
-        exit 1
-    }
+    if (Have "py")    { $pyver = RealPy "py";     if ($pyver) { $basePy = "py" } }
+    if (-not $basePy) { $pyver = RealPy "python"; if ($pyver) { $basePy = "python" } }
 }
-$pyver = (python --version) 2>&1
+
+if (-not $basePy) {
+    Bad "Python 沒裝成功,或被 Windows 的假 python 捷徑擋住。"
+    Say ""
+    Say "  兩個做法擇一,做完重新執行「安裝.bat」:"
+    Say "  A. 到 https://www.python.org/downloads/ 下載安裝,"
+    Say "     安裝畫面第一頁一定要勾 [Add python.exe to PATH]。"
+    Say "  B. 關掉 Windows 的假 python 捷徑:設定 > 應用程式 > 進階應用程式設定"
+    Say "     > 應用程式執行別名 > 把 python.exe 和 python3.exe 兩個都關掉。"
+    Say ""
+    Read-Host "按 Enter 關閉"
+    exit 1
+}
 Ok "$pyver"
 
 # ---------------------------------------------------------------------
@@ -77,10 +97,30 @@ Say ""
 Say "[3/6] 建立專屬環境..."
 $venv = Join-Path $root "venv"
 $vpy = Join-Path $venv "Scripts\python.exe"
+$venvLog = ""
 if (-not (Test-Path $vpy)) {
-    python -m venv $venv
+    # 用驗過的 $basePy 建環境,並把它吐的錯誤全接住 ——
+    # 失敗時要講得出「為什麼」,不能只丟一句「環境建立失敗」讓人卡在這。
+    # try/catch 連 PowerShell 自己拋的例外也一起收(ErrorActionPreference=Stop)。
+    try { $venvLog = (& $basePy -m venv $venv 2>&1 | Out-String).Trim() }
+    catch { $venvLog = $_.Exception.Message }
 }
-if (-not (Test-Path $vpy)) { Bad "環境建立失敗"; Read-Host "按 Enter 關閉"; exit 1 }
+if (-not (Test-Path $vpy)) {
+    Bad "環境建立失敗"
+    if ($venvLog) {
+        Say ""
+        Say "  Python 回報的原因:"
+        foreach ($ln in ($venvLog -split "`n")) { Say ("    " + $ln.TrimEnd()) }
+    }
+    Say ""
+    Say "  常見原因:"
+    Say "  - Windows 的假 python 捷徑擋住(設定 > 應用程式 > 應用程式執行別名,關掉 python.exe)"
+    Say "  - 防毒軟體擋住建立資料夾(暫時關閉,或把這個資料夾加進白名單)"
+    Say "  - 安裝位置沒有寫入權限(換到像 C:\pr-autoedit 這種簡單路徑再試)"
+    Say ""
+    Read-Host "按 Enter 關閉"
+    exit 1
+}
 & $vpy -m pip install --upgrade pip --quiet
 Ok "專屬環境完成"
 
