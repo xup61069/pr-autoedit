@@ -30,10 +30,37 @@
       path.join(dir, "venv", "Scripts", "python.exe"),
       path.join(dir, ".venv", "Scripts", "python.exe"),
     ];
+    // 沒有 venv 時,再去常見的安裝位置找一個「絕對路徑」的 Python。
+    // 為什麼要找絕對路徑:Premiere(CEP)開子行程時的 PATH 常常不完整,
+    // 就算你在命令列打得到 python,面板這邊 spawn "python" 還是會 ENOENT。
+    // 給絕對路徑就繞過這個問題。
+    var env = process.env || {};
+    function pushPy3(base) {   // base 底下形如 Python3xx 的資料夾
+      try {
+        if (!base || !fs.existsSync(base)) return;
+        fs.readdirSync(base).forEach(function (d) {
+          if (/^Python3/i.test(d)) {
+            var p = path.join(base, d, "python.exe");
+            if (fs.existsSync(p)) cands.push(p);
+          }
+        });
+      } catch (e) {}
+    }
+    if (env.LOCALAPPDATA) pushPy3(path.join(env.LOCALAPPDATA, "Programs", "Python"));
+    pushPy3("C:\\Program Files");
+    if (env.USERPROFILE) {   // conda / miniforge 常見位置
+      ["miniconda3", "anaconda3", "miniforge3"].forEach(function (d) {
+        cands.push(path.join(env.USERPROFILE, d, "python.exe"));
+      });
+    }
+    // Windows Python 啟動器:通常在 C:\Windows(CEP 的 PATH 幾乎一定有),
+    // py 會自己找到系統上的 Python,比裸 python 可靠。
+    if (env.WINDIR) cands.push(path.join(env.WINDIR, "py.exe"));
+
     for (var i = 0; i < cands.length; i++) {
       try { if (fs.existsSync(cands[i])) return cands[i]; } catch (e) {}
     }
-    return "python";        // 沒有虛擬環境就用系統上的 Python
+    return "python";        // 真的都找不到,交給系統 PATH 上的 python(可能仍會失敗)
   }
 
   var PROJECT_DIR = detectProjectDir() || "C:\\pr-autoedit";
@@ -313,11 +340,14 @@
   // config/panel.json,照舊訊息做只會白忙一場。這裡直接把目前用的路徑
   // 印出來,你一眼就看得出它找錯地方了。
   function pythonFailMsg(e) {
-    return "找不到 Python,沒辦法開始。\n" +
-      "  目前用的 Python:" + PYTHON + "\n" +
+    return "找不到可以用的 Python,面板沒辦法開始。\n" +
+      "  這通常代表安裝還沒完成 —— 請(重新)雙擊「安裝.bat」把它裝好,\n" +
+      "  裝完後把 Premiere 完全關掉再重開。\n" +
+      "  目前找的 Python:" + PYTHON + "\n" +
       "  目前的專案資料夾:" + PROJECT_DIR + "\n" +
-      "  路徑不對的話,編輯 " + path.join(PROJECT_DIR, "config", "panel.json") +
-      " 裡的 python / project_dir 兩個欄位,存檔後重新載入面板。\n" +
+      "  (進階:若你確定 Python 裝在別的地方,編輯 " +
+      path.join(PROJECT_DIR, "config", "panel.json") +
+      " 裡的 python / project_dir 兩個欄位,存檔後重新載入面板。)\n" +
       "  (原始訊息:" + e.message + ")";
   }
 
@@ -531,8 +561,23 @@
     $("formCommon").textContent = "讀取設定中…";
     cp.execFile(PYTHON, ["ui_settings.py", "dump"],
       { cwd: PROJECT_DIR, maxBuffer: 4 * 1024 * 1024 },
-      function (err, stdout) {
-        if (err) { $("formCommon").textContent = "讀取設定失敗:" + err.message; return; }
+      function (err, stdout, stderr) {
+        if (err) {
+          if (err.code === "ENOENT") {
+            // 啟動 Python 就失敗(spawn ... ENOENT)——面板根本沒跑起來。
+            // 原本這裡直接吐「spawn python ENOENT」,對非程式背景的人等於沒訊息。
+            $("formCommon").textContent =
+              "讀取設定失敗:找不到可以用的 Python(" + PYTHON + ")。" +
+              "多半是安裝還沒完成 —— 請(重新)執行「安裝.bat」,裝好後把 Premiere 關掉重開。" +
+              "(進階:也可以編輯 config/panel.json 的 python 欄位。)";
+          } else {
+            // Python 有跑、但自己出錯:把它印的第一行錯誤帶出來,比只有一句
+            // 泛泛的 message 好查。
+            var hint = stderr ? "(" + String(stderr).split("\n")[0].trim() + ")" : "";
+            $("formCommon").textContent = "讀取設定失敗:" + err.message + hint;
+          }
+          return;
+        }
         try { settingsData = JSON.parse(stdout); }
         catch (e) { $("formCommon").textContent = "設定格式解析失敗"; return; }
         renderForm();
