@@ -13,7 +13,7 @@ from __future__ import annotations
 from core.models import Timeline, Cut
 from core.remap import RemapTable
 import config.settings as cfg
-import json, os, subprocess
+import json, os, subprocess, sys
 
 
 # ============================================================
@@ -284,8 +284,14 @@ def build_v1_timeline(timeline: Timeline, out_json: str) -> str:
 def export_premiere_xml(v1_json: str, out_xml: str) -> str:
     """呼叫 auto-editor 把 v1 timeline 轉成 Premiere XML"""
     print("  auto-editor 產生 Premiere XML...")
+    # 用「同一個 python 以模組方式」叫 auto-editor,不要用裸命令名 "auto-editor"。
+    # 為什麼:面板是「直接跑 venv 的 python.exe」(沒有 activate),venv 的
+    # Scripts\ 不會在子行程的 PATH 上,裸命令 "auto-editor" 會 WinError 2
+    # 找不到檔案 —— 明明裝了卻說沒裝。開發機用 conda base(Scripts 在 PATH)
+    # 剛好沒事,是典型的「在我機器上好好的」。sys.executable -m auto_editor
+    # 用的就是正在跑的這個 python,它裝了 auto_editor 就一定找得到。
     subprocess.run([
-        "auto-editor", v1_json,
+        sys.executable, "-m", "auto_editor", v1_json,
         "--export", "premiere",
         "-o", out_xml,
     ], check=True, capture_output=True)

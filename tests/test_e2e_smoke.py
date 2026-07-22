@@ -739,6 +739,25 @@ def test_voicefx_detection():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_autoeditor_invoked_as_module_not_bare_command():
+    """auto-editor 要用「同一個 python -m auto_editor」呼叫,不能用裸命令名。
+
+    踩過的坑(end-user 中招):面板是直接跑 venv 的 python.exe(沒有 activate),
+    venv 的 Scripts\\ 不在子行程 PATH 上,裸命令 "auto-editor" 會 WinError 2
+    「系統找不到指定的檔案」—— 明明裝了卻報成沒裝。開發機用 conda base
+    (Scripts 在 PATH)剛好沒事,是典型的「在我機器上好好的」。
+    這條守住它不會被改回裸命令。"""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    src = open(os.path.join(root, "modules", "premiere_xml.py"),
+               encoding="utf-8").read()
+    # 只驗正面形式:實際的 subprocess 呼叫要長這樣。改回裸命令的話這一整串
+    # 就會不見(註解裡的 "auto-editor" 字樣不含逗號引號,不會誤判)。
+    assert 'sys.executable, "-m", "auto_editor"' in src, \
+        '要用 [sys.executable, "-m", "auto_editor", …] 呼叫,不能用裸命令 ' \
+        '"auto-editor"(venv 端 Scripts 不在 PATH,會 WinError 2)'
+    print("  ✓ auto-editor 用 python -m 呼叫,不靠 PATH(venv 端才不會找不到)")
+
+
 if __name__ == "__main__":
     main()
     test_prompt_always_demonstrates_punctuation()
@@ -758,3 +777,4 @@ if __name__ == "__main__":
     test_docs_list_every_test_suite()
     test_docs_dont_reference_missing_files()
     test_voicefx_detection()
+    test_autoeditor_invoked_as_module_not_bare_command()
