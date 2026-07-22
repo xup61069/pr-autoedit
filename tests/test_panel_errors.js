@@ -107,4 +107,60 @@ const NOISY_PREFIX = [
   ok(got === null, "認不出來的錯誤老實回 null(讓面板顯示原始訊息)");
 }
 
+// --- 5. 啟動失敗(ENOENT)的診斷:分得清「資料夾不見」還是「Python 不見」 ---
+// 實際發生過:面板找到了真的 Python(絕對路徑存在),但工作目錄 PROJECT_DIR
+// 指到不存在的資料夾,spawn 一樣回 ENOENT。舊版一律怪 Python,把使用者
+// 叫去修一個沒壞的東西。這裡守住「怪對人」。
+{
+  // 從 main.js 挖出 envProblems,餵假的 fs/path 與各種 PROJECT_DIR/PYTHON
+  function grabFn(name) {
+    const i = src.indexOf("function " + name + "(");
+    let d = 0, s = false, j = i;
+    for (; j < src.length; j++) {
+      const c = src[j];
+      if (c === "{") { d = d + 1; s = true; }
+      else if (c === "}") { d = d - 1; if (s && d === 0) { j++; break; } }
+    }
+    return src.slice(i, j);
+  }
+  const fnText = grabFn("envProblems");
+  const realPath = require("path");
+
+  function run(existing, PROJECT_DIR, PYTHON) {
+    // 假 fs:只有列在 existing 裡的路徑算「存在」
+    const fs = {
+      existsSync: function (p) {
+        return existing.some(function (e) {
+          return realPath.normalize(e).toLowerCase() ===
+                 realPath.normalize(String(p)).toLowerCase();
+        });
+      }
+    };
+    const path = realPath;
+    // 包成函式運算式:eval 回傳它,並閉包住上面的 fs/path/PROJECT_DIR/PYTHON
+    const envProblems = eval("(" + fnText + ")");
+    return envProblems().join(" | ");
+  }
+
+  const DIR = "C:\\pr-autoedit";
+  const UI = realPath.join(DIR, "ui_settings.py");
+  const PY = "C:\\Users\\TangZih\\AppData\\Local\\Programs\\Python\\Python312\\python.exe";
+
+  // TangZih 的情況:Python 真的在,資料夾不在
+  var r1 = run([PY], DIR, PY);
+  ok(r1.indexOf("找不到專案資料夾") >= 0, "資料夾不見時,指出是「專案資料夾」");
+  ok(r1.indexOf("找不到 Python") < 0, "Python 明明在,就不要誣賴 Python");
+
+  // 反過來:資料夾在、Python 不在
+  var r2 = run([DIR, UI], DIR, PY);
+  ok(r2.indexOf("找不到 Python") >= 0 && r2.indexOf("找不到專案資料夾") < 0,
+    "Python 不見時,才說是 Python");
+
+  // 都在:沒問題
+  ok(run([DIR, UI, PY], DIR, PY) === "", "兩者都在時不亂報問題");
+
+  // 裸 python 交給 PATH,驗不了,不能誤報成「找不到」
+  ok(run([DIR, UI], DIR, "python") === "", "裸 python 不會被誤判成不存在");
+}
+
 console.log("\n全部通過 ✓  錯誤翻譯不會給錯答案(共 " + passed + " 項)。");

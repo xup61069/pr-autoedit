@@ -15,12 +15,28 @@
   //  想手動指定就編輯 config/panel.json 的 project_dir / python。
   // =====================================================================
 
-  // 面板是用 junction 連過去的,要用 realpath 解開才拿得到真正的專案位置
-  function detectProjectDir() {
+  // 面板是用 junction 連過去的,要用 realpath 解開才拿得到真正的專案位置。
+  // 專案資料夾 == 面板資料夾的上一層(那裡有 pipeline.py)。
+  function projectFrom(extDir) {
     try {
-      var real = fs.realpathSync(cs.getSystemPath(SystemPath.EXTENSION));
-      var parent = path.dirname(real);
+      var parent = path.dirname(fs.realpathSync(extDir));
       if (fs.existsSync(path.join(parent, "pipeline.py"))) return parent;
+    } catch (e) {}
+    return null;
+  }
+  function detectProjectDir() {
+    // 方法1:CEP 官方 API 拿面板資料夾。
+    try {
+      var d = projectFrom(cs.getSystemPath(SystemPath.EXTENSION));
+      if (d) return d;
+    } catch (e) {}
+    // 方法2:退路 —— 從面板自己的網址推(index.html 就在面板資料夾裡)。
+    // 有些環境 getSystemPath / SystemPath 拿不到,這條完全不靠 CSInterface。
+    try {
+      var href = decodeURIComponent(String(window.location.href));
+      var p = href.replace(/^file:\/+/i, "").replace(/\//g, "\\");   // file:///C:/a/b.html -> C:\a\b.html
+      var d2 = projectFrom(path.dirname(p));
+      if (d2) return d2;
     } catch (e) {}
     return null;
   }
@@ -335,18 +351,38 @@
                "特別是含 Error / Traceback 的那幾行。") + "\n");
   }
 
-  // 啟動 Python 失敗時的說明。
-  // 舊訊息叫人「去改 main.js 的 PYTHON」,但改版後正確的位置是
-  // config/panel.json,照舊訊息做只會白忙一場。這裡直接把目前用的路徑
-  // 印出來,你一眼就看得出它找錯地方了。
+  // 到底哪裡不對?spawn 的 ENOENT 有兩個來源長得一模一樣:「Python 執行檔
+  // 不存在」和「工作目錄(專案資料夾)不存在」。以前一律怪到 Python 頭上,
+  // 結果 Python 明明找到了、路徑也在,使用者卻被叫去修 Python,白忙一場。
+  // 這裡逐項檢查,回一串真正有問題的東西(沒問題就回空陣列)。
+  function envProblems() {
+    var probs = [];
+    if (!fs.existsSync(PROJECT_DIR)) {
+      probs.push("找不到專案資料夾:" + PROJECT_DIR);
+    } else if (!fs.existsSync(path.join(PROJECT_DIR, "ui_settings.py"))) {
+      probs.push("專案資料夾裡找不到程式檔:" + PROJECT_DIR +
+                 "(可能沒解壓縮完整,或面板指到了錯的資料夾)");
+    }
+    // 裸的 python / py 交給系統 PATH,存不存在這裡驗不了,略過;只驗絕對路徑。
+    if (PYTHON !== "python" && PYTHON !== "py" && !fs.existsSync(PYTHON)) {
+      probs.push("找不到 Python:" + PYTHON);
+    }
+    return probs;
+  }
+
+  // 啟動 Python 失敗時的說明。先講「真正」不對的是什麼(Python 還是資料夾),
+  // 再叫人重跑安裝.bat;panel.json 是進階退路。
   function pythonFailMsg(e) {
-    return "找不到可以用的 Python,面板沒辦法開始。\n" +
+    var probs = envProblems();
+    var head = probs.length
+      ? probs.join("\n  ") + "\n"
+      : "面板叫不起 Python(可能 Python 或專案資料夾其一有問題)。\n";
+    return head +
       "  這通常代表安裝還沒完成 —— 請(重新)雙擊「安裝.bat」把它裝好,\n" +
       "  裝完後把 Premiere 完全關掉再重開。\n" +
       "  目前找的 Python:" + PYTHON + "\n" +
       "  目前的專案資料夾:" + PROJECT_DIR + "\n" +
-      "  (進階:若你確定 Python 裝在別的地方,編輯 " +
-      path.join(PROJECT_DIR, "config", "panel.json") +
+      "  (進階:編輯 " + path.join(PROJECT_DIR, "config", "panel.json") +
       " 裡的 python / project_dir 兩個欄位,存檔後重新載入面板。)\n" +
       "  (原始訊息:" + e.message + ")";
   }
@@ -564,12 +600,17 @@
       function (err, stdout, stderr) {
         if (err) {
           if (err.code === "ENOENT") {
-            // 啟動 Python 就失敗(spawn ... ENOENT)——面板根本沒跑起來。
-            // 原本這裡直接吐「spawn python ENOENT」,對非程式背景的人等於沒訊息。
+            // 啟動就失敗(spawn ... ENOENT)。這個 ENOENT 可能是 Python 執行檔
+            // 不存在,也可能是「工作目錄(專案資料夾)不存在」——兩者長得一樣。
+            // 逐項查出真正不對的是哪個,才不會叫人去修沒壞的東西。
+            var probs = envProblems();
+            var why = probs.length ? probs.join(";") :
+              "Python 或專案資料夾其一有問題(Python:" + PYTHON +
+              ",資料夾:" + PROJECT_DIR + ")";
             $("formCommon").textContent =
-              "讀取設定失敗:找不到可以用的 Python(" + PYTHON + ")。" +
+              "讀取設定失敗:" + why + "。" +
               "多半是安裝還沒完成 —— 請(重新)執行「安裝.bat」,裝好後把 Premiere 關掉重開。" +
-              "(進階:也可以編輯 config/panel.json 的 python 欄位。)";
+              "(進階:編輯 config/panel.json 的 python / project_dir 欄位。)";
           } else {
             // Python 有跑、但自己出錯:把它印的第一行錯誤帶出來,比只有一句
             // 泛泛的 message 好查。
