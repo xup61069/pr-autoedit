@@ -314,13 +314,16 @@ def mux_back(source, clean_wav: str, out_mp4: str) -> str:
     for encoder, label, extra in _encoder_ladder():
         print(f"  嘗試 {label}…")
         try:
+            # 進度回報仍掛在「混回影片」這一段:無損複製失敗才會走到這裡,
+            # 沿用同一段進度條(而不是另開一段從 0% 重來),總進度條才不會往回跳。
+            # 正在試哪個編碼器,上面那行 print 已經講了。
             run_ffmpeg([
                 "ffmpeg", "-y", *in_args, "-i", clean_wav,
                 "-map", "0:v", "-map", "1:a",
                 "-c:v", encoder, *extra, *_quality_args(encoder),
                 "-c:a", "aac", "-b:a", "192k", "-ac", "2",
                 "-shortest", out_mp4,
-            ], f"重新編碼({label})", total)
+            ], "混回影片", total)
         except (subprocess.CalledProcessError, FileNotFoundError):
             tried.append(label)
             continue

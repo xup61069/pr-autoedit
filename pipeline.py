@@ -161,6 +161,22 @@ def main():
             skip = False
             print("[1/5] 聲音設定已變更,重新處理音訊(這一步比較久,請稍候)")
 
+    # 登記「這次會依序跑哪些會顯示進度的步驟」,好讓面板畫成一條一路往前的
+    # 總進度條(而不是每個小步驟各自 0→100% 一直填滿又清空)。只登記真的會
+    # 跑的:跳過音訊、沒要掃畫面的話就別放進來,不然那一段會空著、輪到下一步
+    # 進度條會突然往前跳。詳見 modules/progress.py 的 begin_run。
+    from modules import progress
+    plan = []
+    if not skip:
+        plan.append("抽出音軌")
+        if cfg.AUDIO_MODE != "none":       # none 不做響度標準化
+            plan.append("響度標準化")
+    plan.append("語音轉錄")
+    if cfg.SILENCE_ACTION == "auto":       # 只有「看畫面決定」才需要掃畫面
+        plan.append("分析畫面活動")
+    plan.append("混回影片")
+    progress.begin_run(plan)
+
     if skip:
         print("[1/5] 跳過音訊清理(用現有乾淨音訊)")
         clean_wav = norm_wav if os.path.exists(norm_wav) else raw_wav
@@ -421,6 +437,9 @@ def main():
                live=live)
 
     # --- 5. 完成 ---
+    # 補一個整條 100%:有些路徑(沿用上次混好的影片)最後一個登記步驟不會
+    # 真的跑,進度條會停在半路,這裡把它填滿。
+    progress.finish_run()
     tidy(work)          # 清掉純中繼的半成品音檔,省硬碟
     print(f"\n[5/5] 完成 ✓  產物在 {work}/")
     print("  下一步:先開 04_report.html 掃一遍,再把 04_project.xml 匯入 Premiere")
