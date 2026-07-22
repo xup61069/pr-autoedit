@@ -26,3 +26,19 @@
 *.bin binary
 *.mp4 binary
 *.wav binary
+
+# --- 不要打包進 Release 下載檔(git archive 會照 export-ignore 略過)---
+#
+# 發佈用的 zip 是給「只想裝來用」的人,不需要維護者/發佈/測試那些檔。
+# 這裡標了 export-ignore 的,git archive 就不會收進去(版本庫裡照樣留著)。
+# 注意:.bat 那幾個保留的是使用者要用的(安裝/移除);只排掉發佈那支。
+.gitattributes    export-ignore
+.gitignore        export-ignore
+README.md         export-ignore
+SETUP.md          export-ignore
+PUBLISH.md        export-ignore
+AGENTS.md         export-ignore
+CONTRIBUTING.md   export-ignore
+publish_release.ps1 export-ignore
+發佈Release.bat   export-ignore
+tests/            export-ignore
