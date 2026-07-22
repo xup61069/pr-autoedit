@@ -219,6 +219,11 @@
       msg: "顯示卡記憶體不足。\n" +
            "  → 到「⚙ 設定 > 辨識 > 辨識模型」把 large-v3 改成 medium,再跑一次\n" +
            "     (medium 稍微不準,但省一半以上的顯卡記憶體)" },
+    { re: /No module named ['"]?qwen_asr/i,
+      msg: "你把辨識引擎選成 Qwen3-ASR,但還沒裝它。\n" +
+           "  → 在命令列執行:pip install qwen-asr\n" +
+           "     (套件名是 qwen-asr,不是 qwen_asr;首次辨識會再下載模型數 GB)\n" +
+           "     不想裝就把「辨識引擎」改回 faster-whisper" },
     { re: /No module named ['"]?([\w.]+)/i,
       msg: "缺少套件:$1。\n" +
            "  → 在命令列執行:pip install $1\n" +

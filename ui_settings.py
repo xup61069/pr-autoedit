@@ -61,8 +61,11 @@ FIELDS = [
      "hint": "頻道名、人名、慣用詞,逗號分隔。優先權最高、不會被截斷,"
              "不能聽錯的詞放這裡"},
     {"key": "ASR_ENGINE", "label": "辨識引擎", "type": "select",
-     "tier": "common", "group": "辨識", "options": ["faster-whisper", "funasr"],
-     "hint": "faster-whisper 通用,中英夾雜較佳;funasr 純中文備選"},
+     "tier": "common", "group": "辨識",
+     "options": ["faster-whisper", "funasr", "qwen"],
+     "hint": "faster-whisper 通用、中英夾雜較佳、詞庫可壓術語(建議);"
+             "funasr 純中文備選;qwen 阿里 Qwen3-ASR,但詞庫對它無效,"
+             "準不準要自己實測比報告"},
     {"key": "WHISPER_MODEL", "label": "辨識模型", "type": "select",
      "tier": "common", "group": "辨識", "options": ["large-v3", "medium", "small", "base"],
      "show_if": {"ASR_ENGINE": ["faster-whisper"]},
@@ -369,6 +372,15 @@ PANEL_OMITTED_KEYS = {
     "RETAKE_BOUNDARY_GAP_SEC":
         "重講交界要求的停頓長度。這是擋掉排比句誤判的主力,實測調鬆之後"
         "抓到的幾乎都是「左側是…右側是…」這種正常修辭,放出來只會鼓勵調壞它",
+
+    # --- Qwen3-ASR 的模型名與分段上限 ---
+    # 引擎本身在「辨識引擎」下拉裡可以選;這三個是它的內部設定,固定值居多,
+    # 不值得佔面板版面。要換模型或調分段長度的人有能力去改 settings.py。
+    "QWEN_MODEL": "Qwen3-ASR 的辨識模型名稱,固定值,一般不用動",
+    "QWEN_ALIGNER": "Qwen3-ASR 的時間戳對齊模型名稱,固定值,一般不用動",
+    "QWEN_ALIGN_MAX_SEC":
+        "長片分段對齊的每段秒數上限,是擋住「超過模型 5 分鐘硬限」的安全閥,"
+        "不是日常會調的東西",
 }
 
 # 有標題的設定,報告的「本次設定」表才印得出人看得懂的名字。

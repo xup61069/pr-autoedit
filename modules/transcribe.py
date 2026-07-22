@@ -2,9 +2,11 @@
 語音轉錄模組 —— 把音訊轉成「詞級時間戳」,這是整個系統的唯一真相來源。
 
 支援可切換的辨識引擎(見 config.ASR_ENGINE):
-  "faster-whisper" —— 預設(Whisper,泛用、多語,中英夾雜表現較好)
+  "faster-whisper" —— 預設(Whisper,泛用、多語,中英夾雜表現較好,詞庫可壓術語)
   "funasr"         —— 備選:阿里 FunASR / Paraformer(純中文可試;
                       中英夾雜實測不如 Whisper,且逐字輸出無標點)
+  "qwen"           —— 備選:阿里 Qwen3-ASR(2026);詞級時間戳靠另掛的對齊模型,
+                      長片自動分段對齊。無熱詞介面,詞庫對它無效。
 
 不論用哪個引擎,對外都回傳一樣的 list[Word](text/start/end,秒),
 所以之後要換引擎,其餘管線完全不用改。
@@ -32,6 +34,14 @@ def _asr_fingerprint() -> dict:
                 "model": getattr(cfg, "WHISPER_MODEL", ""),
                 "language": getattr(cfg, "WHISPER_LANGUAGE", "zh"),
                 "prompt": _build_initial_prompt()}
+    if engine == "qwen":
+        # 詞庫對 Qwen 無效(沒有熱詞介面),所以指紋不含詞庫;但分段長度會
+        # 影響切點位置、進而影響邊界字的時間戳,所以列進去。
+        return {"engine": engine,
+                "model": getattr(cfg, "QWEN_MODEL", ""),
+                "aligner": getattr(cfg, "QWEN_ALIGNER", ""),
+                "language": getattr(cfg, "WHISPER_LANGUAGE", "zh"),
+                "align_max": getattr(cfg, "QWEN_ALIGN_MAX_SEC", 240)}
     return {"engine": engine,
             "model": getattr(cfg, "FUNASR_MODEL", "paraformer-zh"),
             "hotword": " ".join(effective_vocab())}
@@ -59,9 +69,11 @@ def transcribe(audio_path: str, cache_json: str | None = None) -> list[Word]:
         words = _transcribe_faster_whisper(audio_path)
     elif engine == "funasr":
         words = _transcribe_funasr(audio_path)
+    elif engine == "qwen":
+        words = _transcribe_qwen(audio_path)
     else:
         raise ValueError(f"未知的 ASR_ENGINE:{engine!r}("
-                         "目前支援 'faster-whisper' 與 'funasr')")
+                         "目前支援 'faster-whisper'、'funasr'、'qwen')")
 
     print(f"  轉錄完成:{len(words)} 個詞")
     if cache_json:
@@ -269,6 +281,188 @@ def _transcribe_funasr(audio_path: str) -> list[Word]:
         words.append(Word(text=convert(tok),
                           start=span[0] / 1000.0,     # 毫秒 -> 秒
                           end=span[1] / 1000.0))
+    return words
+
+
+# ---------------------------------------------------------------------------
+# 引擎 C:阿里 Qwen3-ASR(2026)
+# ---------------------------------------------------------------------------
+# ⚠️ 這支程式「邏輯寫好、實機未驗」——開發環境沒有裝這兩個模型。
+# 真正會出錯的地方(分段、時間戳偏移、毫秒/簡繁換算)都抽成底下的純函式
+# 並且有測試;只有「呼叫模型」那一段沒辦法在這裡跑到。第一次用請拿一支
+# 短片跑,對照 04_report.html 確認詞的時間點沒有整體偏掉。
+#
+# Qwen3-ASR 跟 Whisper 最大的不同:
+#   1. 詞級/字級時間戳要另掛一個對齊模型(ForcedAligner),是兩段式。
+#   2. 對齊模型單次約 5 分鐘上限,所以長片要自己切段、對齊、再把時間接回來。
+#   3. 沒有熱詞/提示詞介面,所以 effective_vocab() 對它無效。
+
+# 本專案的語言碼(跟 Whisper 共用 WHISPER_LANGUAGE)-> Qwen 吃的語言名稱。
+_QWEN_LANG = {
+    "zh": "Chinese", "en": "English", "yue": "Cantonese", "ja": "Japanese",
+    "ko": "Korean", "de": "German", "fr": "French", "es": "Spanish",
+    "it": "Italian", "pt": "Portuguese", "ru": "Russian",
+}
+
+
+def _qwen_language():
+    """把 WHISPER_LANGUAGE 轉成 Qwen 認的語言名稱;auto/空白 -> None(自動)。"""
+    lang = getattr(cfg, "WHISPER_LANGUAGE", "zh")
+    if lang in ("auto", "", None):
+        return None
+    return _QWEN_LANG.get(lang, None)   # 認不得的一律交給自動偵測
+
+
+def _qwen_chunk_plan(total_sec: float, silences: list[tuple[float, float]],
+                     max_sec: float) -> list[tuple[float, float]]:
+    """把 0~total_sec 切成一段段「不超過 max_sec」的區間,盡量切在靜音中點。
+
+    對齊模型有 5 分鐘上限,所以長片一定要切。切點挑在靜音中間,才不會把一個
+    詞切成兩半(切到詞中間,兩邊的對齊都會怪)。找不到合適的靜音就硬切在
+    上限處——寧可切到一個詞,也不能整段超過上限被模型拒絕或截斷。
+
+    silences:靜音區間 [(起, 迄)] 秒。回傳的區間首尾相連、完整覆蓋 0~total。
+    純函式(不碰模型、不碰檔案),方便測試邊界。"""
+    plan: list[tuple[float, float]] = []
+    cursor = 0.0
+    sils = sorted(silences)
+    while total_sec - cursor > max_sec + 1e-6:
+        target = cursor + max_sec
+        # 找「cursor 之後、target 之前」的靜音,取中點最接近 target 的那個
+        # (sils 已排序,越後面越接近 target,所以最後一個命中的就是答案)
+        best = None
+        for a, b in sils:
+            mid = (a + b) / 2.0
+            if cursor + 1.0 < mid <= target:
+                best = mid
+        cut = best if best is not None else target
+        plan.append((cursor, cut))
+        cursor = cut
+    plan.append((cursor, total_sec))
+    return plan
+
+
+def _qwen_words_from_stamps(stamps, offset_sec: float, convert) -> list[Word]:
+    """把 Qwen 一段的時間戳物件轉成 list[Word],並加上這一段在整片裡的偏移。
+
+    stamps 每個元素有 .text / .start_time / .end_time(毫秒),字典形式也接。
+    convert 是簡轉繁函式(逐字轉,保持跟時間戳 1:1 對齊)。純函式,可測試。"""
+    def _get(o, name):
+        if isinstance(o, dict):
+            return o.get(name)
+        return getattr(o, name, None)
+
+    out: list[Word] = []
+    for st in stamps or []:
+        text = _get(st, "text")
+        s = _get(st, "start_time")
+        e = _get(st, "end_time")
+        if text is None or s is None or e is None:
+            continue
+        t = convert(str(text)).strip()
+        if not t:
+            continue
+        out.append(Word(text=t,
+                        start=offset_sec + float(s) / 1000.0,   # 毫秒 -> 秒
+                        end=offset_sec + float(e) / 1000.0))
+    return out
+
+
+def _find_silences(audio, sr: int, win: float = 0.1,
+                   drop_db: float = 18.0, min_sil: float = 0.3
+                   ) -> list[tuple[float, float]]:
+    """粗略找出靜音區間(秒),只為了決定「該在哪裡切段」,不必很精準。
+
+    用 0.1 秒的窗算音量,比「說話音量」低 drop_db 以上、且連續夠久的算靜音。
+    跟 audio_probe 的微剪偵測是兩回事(那個要準、這個只要抓到換氣的空檔),
+    所以獨立一份、門檻放寬。"""
+    import numpy as np
+    if audio.ndim > 1:
+        audio = audio.mean(axis=1)
+    hop = max(1, int(sr * win))
+    n = len(audio) // hop
+    if n < 1:
+        return []
+    x = audio[: n * hop].reshape(n, hop)
+    rms = np.sqrt(np.mean(np.square(x), axis=1, dtype=np.float64))
+    db = 20.0 * np.log10(np.maximum(rms, 1e-10))
+    speech = float(np.percentile(db, 90))
+    quiet = db < (speech - drop_db)
+    runs: list[tuple[float, float]] = []
+    start = None
+    for i, q in enumerate(quiet):
+        if q and start is None:
+            start = i
+        elif not q and start is not None:
+            runs.append((start * win, i * win))
+            start = None
+    if start is not None:
+        runs.append((start * win, n * win))
+    return [(a, b) for a, b in runs if b - a >= min_sil]
+
+
+_qwen_model = None   # 模型快取,避免同一次執行重複載入
+
+
+def _transcribe_qwen(audio_path: str) -> list[Word]:
+    """引擎 C:阿里 Qwen3-ASR + ForcedAligner。
+
+    做法:整段音訊按靜音切成 <= QWEN_ALIGN_MAX_SEC 的小段,每段各自辨識並
+    對齊出字級時間戳,再把每段的時間加上它在整片裡的起點偏移接回來。
+    輸出跟其他引擎一樣的 list[Word]。依賴:pip install qwen-asr(首次執行
+    自動下載模型,ASR 1.7B + 對齊 0.6B 合計數 GB)。"""
+    import torch
+    from qwen_asr import Qwen3ASRModel
+    from modules.audio_probe import read_audio
+    from modules.progress import Reporter
+
+    global _qwen_model
+    if _qwen_model is None:
+        print(f"  載入 Qwen3-ASR({getattr(cfg, 'QWEN_MODEL', '')}"
+              f" + 對齊模型,首次會下載數 GB)...")
+        _qwen_model = Qwen3ASRModel.from_pretrained(
+            getattr(cfg, "QWEN_MODEL", "Qwen/Qwen3-ASR-1.7B"),
+            dtype=torch.bfloat16, device_map="cuda:0", max_new_tokens=256,
+            forced_aligner=getattr(cfg, "QWEN_ALIGNER",
+                                   "Qwen/Qwen3-ForcedAligner-0.6B"),
+            forced_aligner_kwargs=dict(dtype=torch.bfloat16,
+                                       device_map="cuda:0"))
+
+    audio, sr = read_audio(audio_path)
+    if audio.ndim > 1:
+        audio = audio.mean(axis=1)
+    total = len(audio) / sr
+
+    max_sec = float(getattr(cfg, "QWEN_ALIGN_MAX_SEC", 240))
+    plan = _qwen_chunk_plan(total, _find_silences(audio, sr), max_sec)
+    lang = _qwen_language()
+
+    # 簡轉繁(Qwen 中文多半輸出簡體;逐字轉,保持跟時間戳 1:1)
+    try:
+        from opencc import OpenCC
+        convert = OpenCC("s2tw").convert
+    except ImportError:
+        print("  (未安裝 opencc,Qwen 中文輸出維持簡體)")
+        convert = lambda s: s
+
+    if len(plan) > 1:
+        print(f"  長片分成 {len(plan)} 段對齊(對齊模型單段約 5 分鐘上限)")
+    print("  轉錄中...")
+    rep = Reporter("語音轉錄", total, unit="分", scale=1 / 60)
+    words: list[Word] = []
+    for a, b in plan:
+        seg = audio[int(a * sr): int(b * sr)]
+        res = _qwen_model.transcribe(audio=(seg, sr), language=lang,
+                                     return_time_stamps=True)
+        r = res[0] if res else None
+        stamps = getattr(r, "time_stamps", None) if r is not None else None
+        words += _qwen_words_from_stamps(stamps, a, convert)
+        rep.update(b)
+    rep.done()
+
+    # 放掉模型歸還 VRAM(後面還有混音、產 XML,不必一路佔著好幾 GB)
+    _release_gpu(_qwen_model)
+    _qwen_model = None
     return words
 
 

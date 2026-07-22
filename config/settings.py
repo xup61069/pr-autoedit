@@ -232,9 +232,13 @@ MARKER_MAX_CONFIDENCE = 0.9
 # ============================================================
 
 # 使用哪個辨識引擎:
-#   "faster-whisper" = 預設(Whisper,泛用、支援多語,中英夾雜表現較好)
+#   "faster-whisper" = 預設(Whisper,泛用、支援多語,中英夾雜表現較好,
+#                      而且可以用「教學類型 + 我的額外術語」壓術語)
 #   "funasr"         = 備選:阿里 FunASR / Paraformer(純中文可試;
 #                      中英夾雜實測不如 Whisper,且逐字輸出、沒有標點)
+#   "qwen"           = 備選:阿里 Qwen3-ASR(2026,多語、標榜音樂/歌曲辨識)。
+#                      詞級時間戳靠另掛的對齊模型;沒有熱詞介面,所以詞庫對它
+#                      無效。是否比 Whisper 準,你的內容要自己實測比報告。
 # 要接新引擎,只需在 modules/transcribe.py 加一個對應的函式,
 # 輸出一樣的 list[Word] 即可,其餘管線完全不用動。
 # 切換引擎/模型/詞庫後不用手動刪快取:轉錄快取會記住當時的辨識設定,
@@ -243,6 +247,21 @@ ASR_ENGINE = "faster-whisper"
 
 # --- FunASR 專用參數(ASR_ENGINE="funasr" 時生效)---
 FUNASR_MODEL = "paraformer-zh"   # 目前支援 paraformer-zh(純中文較準)
+
+# --- Qwen3-ASR 專用參數(ASR_ENGINE="qwen" 時生效)---
+# 阿里 2026 年的開源辨識模型。它本體只輸出「整段文字」,詞級/字級時間戳要
+# 再掛一個對齊模型 Qwen3-ForcedAligner。本專案靠「每個詞各自的時間點」運作
+# (刪一個「嗯」就是刪它那幾幀),所以兩個模型都要。
+#
+# ⚠️ 對齊模型單次上限約 5 分鐘,所以長片會自動切成小段(見 QWEN_ALIGN_MAX_SEC)
+#    分段對齊、再把時間戳接回來。
+# ⚠️ Qwen3-ASR 目前「沒有」熱詞/提示詞介面,所以「教學類型 + 我的額外術語」
+#    對它完全沒有作用——那是 Whisper 的招。要靠詞庫壓術語(MIDI、BPM…)就
+#    還是用 faster-whisper。Qwen 得靠它自己原生夠準才划算。
+QWEN_MODEL = "Qwen/Qwen3-ASR-1.7B"
+QWEN_ALIGNER = "Qwen/Qwen3-ForcedAligner-0.6B"
+# 每段拿去對齊的長度上限(秒)。要低於模型的 5 分鐘硬限,留一點安全邊際。
+QWEN_ALIGN_MAX_SEC = 240
 
 # --- Whisper 專用參數(ASR_ENGINE="faster-whisper" 時生效)---
 WHISPER_MODEL = "large-v3"       # 準確度優先;GPU 不夠力可改 "medium"

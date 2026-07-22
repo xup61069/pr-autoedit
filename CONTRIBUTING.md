@@ -4,7 +4,7 @@
 
 ## 開發環境
 
-照 SETUP.md 裝好環境後,改動前先確認測試都通過。**十二套都要跑**:
+照 SETUP.md 裝好環境後,改動前先確認測試都通過。**十三套都要跑**:
 
 ```
 python -m tests.test_decision      # 冗詞、停頓、微剪、重講、設定組合的承諾
@@ -12,6 +12,7 @@ python -m tests.test_remap         # 時間映射與字幕斷行(系統地基)
 python -m tests.test_music         # 音樂保護、雜音剪除、畫面活動判定
 python -m tests.test_live_xml      # 活專案 XML:標籤色、marker、片段覆蓋
 python -m tests.test_live_subs     # 依 Premiere 序列版面重新對位字幕
+python -m tests.test_qwen          # Qwen3-ASR 的分段/時間戳偏移/簡繁換算
 python -m tests.test_e2e_smoke     # 主幹跑得通 + 提示詞長度 + 面板設定涵蓋率
 node tests/test_panel_voicefx.js   # 面板掛人聲效果的邏輯(不必開 Premiere)
 node tests/test_panel_vocab.js     # 教學類型編輯器的額度試算
@@ -56,7 +57,7 @@ node tests/test_panel_progress.js  # 進度條:格式要跟 Python 印的一致
 
 ## 送 PR 前
 
-- 跑過**十二套**測試,全部通過(離開碼要單獨驗,不要接管線)
+- 跑過**十三套**測試,全部通過(離開碼要單獨驗,不要接管線)
 - 若新增了可調參數,把它加進 `ui_settings.py` 的 `FIELDS`(面板會自動長出
   控制項);真的不該做成控制項就加進 `PANEL_OMITTED_KEYS` 並寫明理由。
   兩個都沒做的話 `test_e2e_smoke` 會紅——這是防止「程式在用、面板卻找不到」

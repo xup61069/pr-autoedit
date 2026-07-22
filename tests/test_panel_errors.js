@@ -73,6 +73,7 @@ const NOISY_PREFIX = [
   const cases = [
     ["CUDA out of memory", "顯示卡記憶體不足", "顯示卡記憶體不足"],
     ["ModuleNotFoundError: No module named 'lxml'", "缺少套件", "缺少套件:lxml"],
+    ["ModuleNotFoundError: No module named 'qwen_asr'", "qwen-asr", "Qwen 沒裝時給的是 qwen-asr(不是 qwen_asr)"],
     ["[WinError 5] Access is denied", "檔案被鎖住", "檔案被 Premiere 鎖住"],
     ["RuntimeError: 找不到 ffmpeg,無法分析畫面", "找不到 ffmpeg", "找不到 ffmpeg"],
     ["Unable to load plugin: scan failure", "降噪外掛", "VST 載入真的失敗"],

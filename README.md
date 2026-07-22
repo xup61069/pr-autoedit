@@ -193,13 +193,13 @@ pr-autoedit/
 │  ├─ audio_probe.py    音樂/音效與雜音偵測(能量分析)
 │  ├─ video_probe.py    畫面活動偵測(沒講話時判斷該快轉還是剪掉)
 │  ├─ sources.py        輸入來源(一支影片,或多支接成一支)
-│  ├─ transcribe.py     語音轉錄(faster-whisper / FunASR,可切換)
+│  ├─ transcribe.py     語音轉錄(faster-whisper / FunASR / Qwen3-ASR,可切換)
 │  ├─ premiere_xml.py   Premiere XML + 審閱標記
 │  ├─ subtitles.py      SRT 字幕 + 簡轉繁
 │  ├─ live_subs.py      依 Premiere 剪完的時間軸重新對位字幕
 │  └─ report.py         HTML 審閱報告
 ├─ premiere-panel/      ★ Premiere 面板(見其中的 README)
-├─ tests/               測試 —— 六套 Python + 六套面板邏輯(不必開 Premiere)
+├─ tests/               測試 —— 七套 Python + 六套面板邏輯(不必開 Premiere)
 └─ output/              產物(每支影片一個資料夾)
 ```
 

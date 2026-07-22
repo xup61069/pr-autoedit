@@ -17,6 +17,11 @@ pedalboard>=0.9.0                # 載入 VST 降噪外掛
 # 要用的話把面板的「辨識引擎」改成 funasr,首次執行自動下載模型(約 2GB):
 #   pip install funasr
 #
+# Qwen3-ASR —— 阿里 2026 的替代辨識引擎(多語、標榜音樂/歌曲辨識)。
+# 詞級時間戳靠另掛的對齊模型,長片會自動分段;沒有熱詞介面所以詞庫對它無效。
+# 要用的話把面板的「辨識引擎」改成 qwen,首次執行自動下載模型(合計數 GB):
+#   pip install qwen-asr
+#
 # DeepFilterNet —— 免費降噪的備援路線(AUDIO_MODE="opensource" 才用得到)。
 # ⚠️ Python 3.13 沒有現成安裝包,要先裝 Rust 編譯器才裝得起來。
 # 走 VST 路線(pedalboard,上面已經裝了)或用 Premiere 內建效果的話不需要它:
