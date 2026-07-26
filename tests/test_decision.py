@@ -7,6 +7,12 @@ from core.decision import (build_segments, trim_quiet_inside,
                           find_retakes, drop_retakes, protect_words)
 import config.settings as cfg
 
+# 先把所有設定鎖回內建預設,測試才不會被使用者的個人設定影響
+# (真的發生過:他在面板調了一個值,程式沒動,測試就紅了。
+#  理由與細節見 tests/pin_settings.py)
+from tests.pin_settings import pin_defaults
+pin_defaults()
+
 # 測試以「預設參數」為前提;使用者面板存的 settings_local 覆寫
 # 不應影響測試結果,這裡把測試相依的參數鎖回預設值。
 cfg.SILENCE_ACTION = "speed"

@@ -14,7 +14,14 @@ from modules.report import generate as gen_report
 from modules.premiere_xml import build_v1_timeline
 import config.settings as cfg
 
-# 鎖回預設參數,不受使用者 settings_local 覆寫影響(理由見 test_decision)
+# 先把「所有」設定鎖回內建預設,再套用這個測試要的特別值。
+# 順序不能反 —— 先鎖全部才擋得住使用者 settings_local 的覆寫。
+# (以前這裡是逐條列出要鎖哪些,結果漏了 FILLER_PAUSE_SEC:使用者把它調成
+#  0.15,假資料的間隔剛好也是 0.15,浮點數算成 0.1499999999999999,
+#  冗詞就沒被刪、測試無故變紅。詳見 tests/pin_settings.py)
+from tests.pin_settings import pin_defaults
+pin_defaults()
+
 cfg.SILENCE_ACTION = "speed"
 cfg.SILENCE_THRESHOLD_SEC = 1.2
 cfg.SILENCE_PADDING_SEC = 0.15
@@ -273,7 +280,11 @@ def test_vocab_local_merges_and_keeps_builtin():
         print("  ✓ 個人詞庫:同名覆蓋、新名新增、內建保留、檔案壞掉不會爆")
     finally:
         shutil.rmtree(sandbox, ignore_errors=True)
-        importlib.reload(cfg)      # 確保後面的測試拿到的是真正的設定
+        # 還原成真正的設定模組。⚠️ reload 會「重新讀一次個人設定檔」,
+        # 把檔案最上面 pin_defaults() 鎖好的預設值又蓋掉 —— 後面每一個測試
+        # 就這樣悄悄變成「跑在使用者的個人設定上」。所以 reload 完要立刻重鎖。
+        importlib.reload(cfg)
+        pin_defaults()
 
 
 def test_tests_never_touch_personal_config():
@@ -739,6 +750,44 @@ def test_voicefx_detection():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_personal_settings_do_not_leak_into_tests():
+    """測試跑的必須是「內建預設」,不能是使用者面板上調的那些值。
+
+    真的發生過:他把「冗詞前後要停多久」調成 0.15 秒存進自己的設定檔,
+    而假資料裡那個「嗯」前後剛好各停 0.15 秒 —— 浮點數算出來是
+    0.1499999999999999,比不過門檻,冗詞沒被刪,測試就紅了。
+    **程式一行都沒改,是他調了一個面板設定。**
+
+    這種紅法會慢慢毀掉測試的可信度:他的規則是「全綠才能推」,
+    但測試會因為他調自己的設定而變紅,幾次之後就不會再相信它了。
+
+    這條守著 tests/pin_settings.py 的保護還在(它很容易在重構時被拿掉,
+    而拿掉之後一切看起來都很正常 —— 直到某天他改了某個設定)。"""
+    import json as _json
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    local = os.path.join(root, "config", "settings_local.json")
+    if not os.path.exists(local):
+        print("  ✓ 沒有個人設定檔,不必檢查滲漏")
+        return
+    try:
+        with open(local, encoding="utf-8") as f:
+            personal = _json.load(f)
+    except (ValueError, OSError):
+        print("  ✓ 個人設定檔讀不了(壞檔),跳過檢查")
+        return
+
+    # 只看「真的跟預設不一樣」的那些鍵 —— 一樣的話本來就驗不出滲漏
+    differing = {k: v for k, v in personal.items()
+                 if k in cfg.DEFAULTS and v != cfg.DEFAULTS[k]}
+    leaked = [k for k in differing
+              if getattr(cfg, k, None) != cfg.DEFAULTS[k]]
+    assert not leaked, (
+        "使用者的個人設定滲進測試了:" + "、".join(leaked) +
+        "。測試會隨他在面板調設定而變紅 —— 請確認 pin_settings.pin_defaults() "
+        "有在檔案最上面被呼叫(而且排在其他 cfg 覆寫之前)。")
+    print(f"  ✓ 個人設定沒有滲進測試(擋掉 {len(differing)} 個被覆寫的設定)")
+
+
 def test_autoeditor_invoked_as_module_not_bare_command():
     """auto-editor 要用「同一個 python -m auto_editor」呼叫,不能用裸命令名。
 
@@ -777,4 +826,5 @@ if __name__ == "__main__":
     test_docs_list_every_test_suite()
     test_docs_dont_reference_missing_files()
     test_voicefx_detection()
+    test_personal_settings_do_not_leak_into_tests()
     test_autoeditor_invoked_as_module_not_bare_command()

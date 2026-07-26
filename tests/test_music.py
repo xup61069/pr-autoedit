@@ -9,6 +9,12 @@ from modules.audio_probe import (audible_regions_from_array,
                                  quiet_regions_from_array)
 import config.settings as cfg
 
+# 先把所有設定鎖回內建預設,測試才不會被使用者的個人設定影響
+# (真的發生過:他在面板調了一個值,程式沒動,測試就紅了。
+#  理由與細節見 tests/pin_settings.py)
+from tests.pin_settings import pin_defaults
+pin_defaults()
+
 # 鎖回預設參數,不受使用者 settings_local 覆寫影響(理由見 test_decision)
 cfg.SILENCE_ACTION = "speed"
 cfg.SILENCE_THRESHOLD_SEC = 1.2
