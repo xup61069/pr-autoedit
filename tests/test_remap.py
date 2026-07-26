@@ -265,6 +265,72 @@ def test_punct_keeps_normal_line_limit():
     print("  ✓ 有標點時維持原本的行長設定")
 
 
+def test_short_pause_does_not_orphan_a_word():
+    """講到一半停一下,不可以把前面那一兩個字單獨留成一行。
+
+    這是實際產出裡最刺眼的毛病:教學片常常講一半就停下來操作滑鼠,
+    停頓一超過門檻就斷行,於是「把」「按」被單獨留成一行,
+    連「按/下去」都被拆成兩行。實測四支真實影片,這種碎行佔 24~26%,
+    加上最短行長之後降到 4~5%。"""
+    table = RemapTable([Segment(0, 900, "keep")], fps=30)
+    # 「把」之後停 1 秒(超過門檻),再接一串話
+    words = [Word("把", 0.0, 0.3)]
+    for i, t in enumerate(["這個", "點", "刪掉", "然後", "再", "做", "一次"]):
+        words.append(Word(t, 1.3 + i * 0.4, 1.3 + i * 0.4 + 0.35))
+
+    old = table.build_subtitles(words, max_chars=40, max_gap_frames=15)
+    assert old[0].text == "把", "(前提)舊行為確實會把「把」單獨留成一行"
+
+    new = table.build_subtitles(words, max_chars=40, max_gap_frames=15,
+                                min_chars=8, hard_gap_frames=120)
+    assert new[0].text.startswith("把這個"), \
+        f"停頓不該把「把」孤立成一行,實際:{new[0].text!r}"
+    print("  ✓ 短停頓不會把一兩個字單獨留成一行")
+
+
+def test_long_pause_still_breaks_even_on_a_short_line():
+    """但停頓久到「一定換行」的門檻,再短的行也要斷。
+
+    沒有這道保險的話,一句「好」後面接一大段沒講話的示範,會被併成
+    同一行字幕 —— 實測真的產生過 96 秒與 140 秒的字幕行。"""
+    table = RemapTable([Segment(0, 3000, "keep")], fps=30)
+    words = [Word("好", 0.0, 0.3),
+             Word("接下來", 30.0, 30.5),      # 中間隔了 30 秒
+             Word("我們開始", 30.5, 31.0)]
+    lines = table.build_subtitles(words, max_chars=40, max_gap_frames=15,
+                                  min_chars=8, hard_gap_frames=120)
+    assert lines[0].text == "好", f"長停頓一定要斷開,實際:{lines[0].text!r}"
+    longest = max((l.end_frame - l.start_frame) / 30 for l in lines)
+    assert longest < 10, f"沒有字幕行該橫跨那段長靜音(最久 {longest:.1f} 秒)"
+    print("  ✓ 夠長的停頓仍然斷行,字幕不會橫跨一大段靜音")
+
+
+def test_line_does_not_end_on_a_hanging_word():
+    """行尾不可以吊著「後面一定還有話」的字詞。
+
+    實測產出裡有「然後你」「他的那個」「只要調這個點,它」這種行 ——
+    讀起來就是斷在半空中。這種詞要挪到下一行去。
+    但「嘛、的、了」是中文正常的句尾語氣詞,不可以誤傷。"""
+    table = RemapTable([Segment(0, 900, "keep")], fps=30)
+    # 排成「……然後」剛好落在字數上限,逼它在「然後」後面斷行
+    words = [Word("我們先把這個做完", 0.0, 1.0),
+             Word("然後", 1.0, 1.4),
+             Word("再來調整曲線", 1.4, 2.4)]
+    lines = table.build_subtitles(words, max_chars=10, max_gap_frames=15,
+                                  min_chars=8, hard_gap_frames=120)
+    assert not lines[0].text.endswith("然後"), \
+        f"「然後」該挪到下一行,實際:{lines[0].text!r}"
+    assert "然後" in "".join(l.text for l in lines), "挪走不等於弄丟"
+
+    # 語氣詞結尾是正常的,不該被挪動
+    ok_words = [Word("就是這樣子嘛", 0.0, 1.0), Word("好", 3.0, 3.3)]
+    ok_lines = table.build_subtitles(ok_words, max_chars=10, max_gap_frames=15,
+                                     min_chars=8, hard_gap_frames=120)
+    assert ok_lines[0].text.endswith("嘛"), \
+        f"「嘛」是正常句尾,不該被挪走:{ok_lines[0].text!r}"
+    print("  ✓ 吊在行尾的連接詞會挪到下一行,正常語氣詞不受影響")
+
+
 def test_lookup_matches_bruteforce_on_random_timelines():
     """二分搜尋的查找,結果必須跟「從頭掃到底」完全一樣。
 
@@ -412,6 +478,9 @@ if __name__ == "__main__":
     test_fully_cut_word_dropped()
     test_no_punct_uses_shorter_lines()
     test_punct_keeps_normal_line_limit()
+    test_short_pause_does_not_orphan_a_word()
+    test_long_pause_still_breaks_even_on_a_short_line()
+    test_line_does_not_end_on_a_hanging_word()
     test_lookup_matches_bruteforce_on_random_timelines()
     test_unsorted_spans_are_rejected_or_sorted()
     test_overlapping_clips_keep_their_subtitles()

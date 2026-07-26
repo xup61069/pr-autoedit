@@ -182,10 +182,42 @@ class RemapTable:
     _SENT_END = "。！？!?…"
     _CLAUSE_END = ",,、;;::"
 
+    # 「後面一定還有話」的字詞 —— 一行如果結束在這裡,讀起來就是斷在半空中。
+    # 實測四支真實教學片,約 29% 的字幕行是這樣結尾的(「然後你」「他的那個」
+    # 「只要調這個點,它」),因為講到一半停下來操作滑鼠就會被斷行。
+    #
+    # 只收「單獨結尾一定不通順」的:介詞(把/被/跟)、指示與人稱(這/那/它/我)、
+    # 連接詞(然後/所以/如果)。刻意「不」收「的、了、嗎、嘛、啊」——
+    # 那些是中文正常的句尾語氣詞,「就這樣子嘛」是好的斷行,收進來會誤傷。
+    _HANGING_CHARS = set("把被跟和與對幫讓往從我你他這那它就再也很都要能會想")
+    _HANGING_WORDS = ("然後", "所以", "因為", "如果", "就是", "可是", "但是",
+                      "不過", "而且", "還有", "那個", "這個", "其實", "可能")
+
+    # 句尾語氣詞:講到這裡就是一句話講完了,即使沒有標點。
+    # 用途:短行本來不准因停頓而斷(免得產生碎行),但「就這樣子嘛」後面
+    # 停了兩秒,那是真的講完了 —— 不放行的話會併出「就這樣子嘛好」這種行。
+    # 只收語氣明確的;「了、的、啊」太模稜兩可(「我的」「我要」也長這樣),
+    # 收進來會把還沒講完的句子提早切開。
+    _UTTERANCE_END = set("嘛呢吧囉啦耶喔")
+
+    @classmethod
+    def _ends_hanging(cls, text: str) -> bool:
+        """這行是不是結束在「後面一定還有話」的字詞上?"""
+        t = text.rstrip(cls._CLAUSE_END + " ")
+        if not t:
+            return False
+        if t[-1] in cls._SENT_END:
+            return False              # 有句末標點就是真的講完了
+        if t.endswith(cls._HANGING_WORDS):
+            return True
+        return t[-1] in cls._HANGING_CHARS
+
     def build_subtitles(self, words: list[Word],
                         max_chars: int = 18,
                         max_gap_frames: int = 15,
-                        max_chars_no_punct: Optional[int] = None
+                        max_chars_no_punct: Optional[int] = None,
+                        min_chars: int = 0,
+                        hard_gap_frames: Optional[int] = None
                         ) -> list[SubtitleLine]:
         """把詞級時間戳轉成字幕行。
 
@@ -207,26 +239,47 @@ class RemapTable:
                 max_chars = min(max_chars, max_chars_no_punct)
 
         lines: list[SubtitleLine] = []
-        buf: list[str] = []
-        line_start: Optional[int] = None
-        line_end: Optional[int] = None
+        # buf 存 (文字, 時間軸起幀, 時間軸迄幀):要把吊在行尾的詞挪到下一行,
+        # 就得連它的時間一起搬,所以不能只存文字。
+        buf: list[tuple[str, int, int]] = []
         prev_orig_end: Optional[int] = None   # 上一個「保留」詞的原始結束幀
         idx = 1
         soft_break = max(6, max_chars // 2)   # 逗號斷行的最短行長
 
-        def flush():
-            nonlocal buf, line_start, line_end, idx
+        def flush(force: bool = False):
+            """收掉目前這一行。
+
+            force=True 用在「真的講完了」(句末標點、全部處理完),此時不做
+            挪移。其餘情況若這行結束在「後面一定還有話」的字詞上,就把那個詞
+            留給下一行 —— 例如「然後你」「他的那個」不該自己站一行。
+            """
+            nonlocal buf, idx
+            if not buf:
+                return
+            keep = list(buf)
+            carried: list[tuple[str, int, int]] = []
+            if not force:
+                # 最多挪兩個詞:再多就會把整句拆散,而且可能一路挪下去。
+                for _ in range(2):
+                    if len(keep) <= 1:
+                        break
+                    if not self._ends_hanging("".join(w[0] for w in keep)):
+                        break
+                    # 挪完剩下的太短就不划算 —— 那只是把「壞結尾」換成「碎行」
+                    if sum(len(w[0]) for w in keep[:-1]) < 4:
+                        break
+                    carried.insert(0, keep.pop())
             # 行尾的句中逗號拿掉(斷行本身已代表停頓),句末標點保留
-            text = "".join(buf).rstrip(self._CLAUSE_END + " ")
-            if text and line_start is not None:
+            text = "".join(w[0] for w in keep).rstrip(self._CLAUSE_END + " ")
+            if text:
                 lines.append(SubtitleLine(
                     index=idx,
-                    start_frame=line_start,
-                    end_frame=line_end,
+                    start_frame=keep[0][1],
+                    end_frame=keep[-1][2],
                     text=text,
                 ))
                 idx += 1
-            buf, line_start, line_end = [], None, None
+            buf = carried
 
         def _mid_english_word(prev: str, nxt: str) -> bool:
             """斷點是否落在一個英文/數字單字的中間。
@@ -250,29 +303,36 @@ class RemapTable:
 
             # 換行時機(加入這個詞之前判斷):原始停頓大,或已達字數上限。
             # 但若正好在英文單字中間,先不斷,等單字結束(避免 Pat|tern)
-            mid_word = bool(buf) and _mid_english_word(buf[-1], w.text)
-            if line_end is not None and not mid_word and (
-                (prev_orig_end is not None and
-                 ws_orig - prev_orig_end > max_gap_frames) or
-                sum(len(x) for x in buf) >= max_chars
-            ):
+            mid_word = bool(buf) and _mid_english_word(buf[-1][0], w.text)
+            cur_len = sum(len(x[0]) for x in buf)
+            gap = (ws_orig - prev_orig_end) if prev_orig_end is not None else 0
+
+            # 停頓斷行要看這行「夠不夠長」:講到一半停下來操作滑鼠是教學片的
+            # 日常,一停就斷會把「把」「按」「然後你」單獨留成一行。
+            # 但停頓久到 hard_gap 就一定斷 —— 否則一句「好」後面接兩分鐘的
+            # 示範,會被併成同一行(實測真的產生過 96 秒的字幕)。
+            ended = buf and buf[-1][0].rstrip(self._CLAUSE_END + " ")[-1:] \
+                in self._UTTERANCE_END
+            gap_break = gap > max_gap_frames and (
+                cur_len >= min_chars
+                or ended            # 語氣詞收尾:短歸短,話是講完了
+                or (hard_gap_frames is not None and gap >= hard_gap_frames))
+
+            if buf and not mid_word and (gap_break or cur_len >= max_chars):
                 flush()
 
-            if line_start is None:
-                line_start = ts
-            line_end = te
             prev_orig_end = w.end_frame(self.fps)
-            buf.append(w.text)
+            buf.append((w.text, ts, te))
 
             # 加入這個詞之後:遇到標點就順勢斷句,讓行尾落在自然停頓
             tail = w.text[-1] if w.text else ""
-            line_len = sum(len(x) for x in buf)
+            line_len = sum(len(x[0]) for x in buf)
             if tail in self._SENT_END:
-                flush()                                   # 句末 → 一定斷
+                flush(force=True)                         # 句末 → 一定斷
             elif tail in self._CLAUSE_END and line_len >= soft_break:
                 flush()                                   # 逗號且行夠長 → 斷
 
-        flush()
+        flush(force=True)
         return lines
 
     # -----------------------------------------------------------------

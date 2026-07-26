@@ -431,6 +431,8 @@ def main():
         max_chars=cfg.SUBTITLE_MAX_CHARS,
         max_gap_frames=round(cfg.SUBTITLE_MAX_GAP_SEC * fps),
         max_chars_no_punct=getattr(cfg, "SUBTITLE_MAX_CHARS_NO_PUNCT", None),
+        min_chars=getattr(cfg, "SUBTITLE_MIN_CHARS", 0),
+        hard_gap_frames=round(getattr(cfg, "SUBTITLE_HARD_GAP_SEC", 4.0) * fps),
     )
     write_srt(subs, fps, wpath(work, "04_subtitles.srt"))
     gen_report(timeline, words, table, wpath(work, "04_report.html"),

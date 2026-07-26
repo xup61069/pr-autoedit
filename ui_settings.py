@@ -220,6 +220,16 @@ FIELDS = [
      "tier": "advanced", "group": "字幕", "min": 0.1, "max": 2, "step": 0.1,
      "soft": True,
      "hint": "停頓超過幾秒換行"},
+    {"key": "SUBTITLE_MIN_CHARS", "label": "字幕最短行長", "type": "number",
+     "tier": "advanced", "group": "字幕", "min": 0, "max": 20, "step": 1,
+     "soft": True,
+     "hint": "不到這個字數就不因停頓換行。講到一半停下來操作滑鼠時,"
+             "才不會把「把」「按」「然後你」單獨留成一行。設 0 = 關掉"},
+    {"key": "SUBTITLE_HARD_GAP_SEC", "label": "一定換行的停頓", "type": "number",
+     "tier": "advanced", "group": "字幕", "min": 1, "max": 15, "step": 0.5,
+     "soft": True,
+     "hint": "停頓久到這個秒數就一定換行,再短的行也一樣。"
+             "沒有它的話,一句「好」後面接一大段示範會被併成同一行字幕"},
     {"key": "SUBTITLE_MAX_CHARS_NO_PUNCT", "label": "字幕行長上限(逐字稿沒標點時)",
      "type": "number", "tier": "advanced", "group": "字幕",
      "min": 8, "max": 40, "step": 1, "soft": True,
