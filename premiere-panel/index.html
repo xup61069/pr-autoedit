@@ -104,11 +104,29 @@
           依序選 DeNoise → 參數等化器 → 動態(Premiere 內建)。整軌一次搞定,
           片段再多都一樣快</div>
         <button id="subsFromSeq" class="btn">用目前序列產生字幕</button>
-        <div class="hint">自行剪輯後按這顆,字幕重新對準時間軸</div>
+        <div class="hint">自行剪輯後按這顆,字幕重新對準時間軸(幾秒完成)</div>
         <button id="clearCache" class="btn">清除快取(重新辨識)</button>
         <div class="hint">平常不需要。改設定會自動重跑對應步驟,
           只有結果異常但設定沒動時才用</div>
         <div id="afterMsg" class="savemsg"></div>
+      </div>
+    </div>
+
+    <!-- 字幕(獨立入口):不必先用本工具剪過,開著哪條序列就做哪條。
+         刻意「不」放進上面的剪輯後工具 —— 那一區要跑完一次剪輯才會出現,
+         而這個功能最大的用處正是「沒跑過本工具的序列」。 -->
+    <div class="section" id="asrSec">
+      <div class="section-head" id="asrHead">
+        <span>幫目前序列上字幕</span><span id="asrToggle" class="chev">▸</span>
+      </div>
+      <div id="asrBody" class="section-body" style="display:none">
+        <div class="hint">在 Premiere 點開要上字幕的序列,再按下面這顆。
+          會重新聽一次序列裡的口白,所以<b>任何序列都能用</b>——手動剪的、
+          以前的舊專案、別人給的素材都行,不必先用本工具跑過。</div>
+        <button id="asrFromSeq" class="btn">以目前序列生成辨識字幕</button>
+        <div class="hint">只聽畫面片段自帶的口白(背景音樂軌不會被辨識)。
+          要跑語音辨識,長片可能好幾分鐘,中途可按停止。</div>
+        <div id="asrMsg" class="savemsg"></div>
       </div>
     </div>
 

@@ -222,9 +222,37 @@ function prImportFile(p) {
 }
 
 /*
- * 把「目前作用中序列」的版面寫成 JSON(給 modules/live_subs.py 對位字幕用)。
- * 每個片段記:時間軸位置(start/end)、來源入出點(in/out)、速度倍率。
- * 只讀 V1 視訊軌 —— 本工具產生的序列,V1 就是完整的剪輯結構。
+ * 把字串包成合法的 JSON 值。
+ * Windows 路徑滿是反斜線(C:\影片\a.mp4),直接塞進 JSON 會變成跳脫字元
+ * 而讓整份檔案解析失敗 —— 這種壞法很安靜,Python 那邊只會說 JSON 壞掉,
+ * 看不出是路徑造成的。
+ */
+function prJsonStr(s) {
+    if (s === null || s === undefined) return '""';
+    s = String(s);
+    var out = "", ch;
+    for (var i = 0; i < s.length; i++) {
+        ch = s.charAt(i);
+        if (ch === '"') out += '\\"';
+        else if (ch === "\\") out += "\\\\";
+        else if (ch === "\n") out += "\\n";
+        else if (ch === "\r") out += "\\r";
+        else if (ch === "\t") out += "\\t";
+        else if (ch < " ") out += "\\u" + ("000" + ch.charCodeAt(0).toString(16)).slice(-4);
+        else out += ch;
+    }
+    return '"' + out + '"';
+}
+
+/*
+ * 把「目前作用中序列」的版面寫成 JSON。兩個功能共用:
+ *   - modules/live_subs.py :拿舊的轉錄快取重新對位(快)
+ *   - modules/seq_asr.py   :對目前序列的口白重新辨識(任何序列都能用)
+ * 每個片段記:時間軸位置(start/end)、來源入出點(in/out)、速度倍率,
+ * 以及**來源檔路徑**(重新辨識要拿它去讀聲音;對位那條路用不到也無妨)。
+ * 另外記整條序列的 fps —— 重新辨識的序列可能根本不是本工具產的,
+ * 沒有 03_timeline.json 可以問幀率。
+ * 只讀 V1 視訊軌 —— 口白就跟著畫面片段走,音樂軌不該進辨識。
  */
 function prDumpSequenceLayout(outPath) {
     try {
@@ -235,24 +263,34 @@ function prDumpSequenceLayout(outPath) {
         if (!seq) return "ERROR: 沒有作用中的序列,請先在 Premiere 點開要產字幕的序列";
         if (seq.videoTracks.numTracks < 1) return "ERROR: 這個序列沒有視訊軌";
 
+        var fps = 0;
+        try {
+            // timebase 是「一秒有幾個 tick」,254016000000 是 Premiere 的固定基準
+            if (seq.timebase) fps = 254016000000 / Number(seq.timebase);
+        } catch (eF) { }
+
         var tr = seq.videoTracks[0];
         var parts = [];
         for (var i = 0; i < tr.clips.numItems; i++) {
             var c = tr.clips[i];
             var speed = 1.0;
             try { speed = Math.abs(c.getSpeed()) || 1.0; } catch (eS) { }
+            var p = null;
+            try { p = prMediaPathOf(c.projectItem); } catch (eP) { }
             parts.push('{"start":' + c.start.seconds +
                 ',"end":' + c.end.seconds +
                 ',"in":' + c.inPoint.seconds +
                 ',"out":' + c.outPoint.seconds +
-                ',"speed":' + speed + '}');
+                ',"speed":' + speed +
+                ',"path":' + prJsonStr(p) + '}');
         }
         if (!parts.length) return "ERROR: 時間軸上沒有片段";
 
         var f = new File(outPath);
         f.encoding = "UTF-8";
         if (!f.open("w")) return "ERROR: 無法寫入暫存檔:" + outPath;
-        f.write('{"clips":[' + parts.join(",") + ']}');
+        f.write('{"fps":' + (fps > 0 ? fps : 0) +
+                ',"clips":[' + parts.join(",") + ']}');
         f.close();
         return "OK " + parts.length;
     } catch (e) {

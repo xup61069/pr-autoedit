@@ -13,6 +13,7 @@ python -m tests.test_music         # 音樂保護、雜音剪除、畫面活動�
 python -m tests.test_live_xml      # 活專案 XML:標籤色、marker、片段覆蓋
 python -m tests.test_live_subs     # 依 Premiere 序列版面重新對位字幕
 python -m tests.test_qwen          # Qwen3-ASR 的分段/時間戳偏移/簡繁換算
+python -m tests.test_seq_asr       # 依序列重新辨識:重建的口白要對得準時間軸
 python -m tests.test_e2e_smoke     # 主幹跑得通 + 提示詞長度 + 面板設定涵蓋率
 node tests/test_panel_voicefx.js   # 面板掛人聲效果的邏輯(不必開 Premiere)
 node tests/test_panel_vocab.js     # 教學類型編輯器的額度試算
@@ -20,6 +21,7 @@ node tests/test_panel_stop.js      # 停止鈕:收整棵行程樹、停止不等
 node tests/test_panel_merge.js     # 多檔合併:命名與排序要跟 Python 算得一樣
 node tests/test_panel_errors.js    # 錯誤翻譯:不准給錯答案
 node tests/test_panel_progress.js  # 進度條:格式要跟 Python 印的一致
+node tests/test_panel_layout.js    # 序列版面:Windows 路徑跳脫與幀率換算
 ```
 
 > ⚠️ **驗證指令不要接管線。**`python -m tests.xxx | tail` 的離開碼是 `tail` 的,

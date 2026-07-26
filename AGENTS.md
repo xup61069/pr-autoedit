@@ -105,6 +105,7 @@ python -m tests.test_music      # 動了 audio_probe / video_probe / 音樂保�
 python -m tests.test_live_xml   # 動了 premiere_xml.py 或新增了段落種類
 python -m tests.test_live_subs  # 動了 live_subs.py 或 RemapTable.from_spans
 python -m tests.test_qwen       # 動了 Qwen3-ASR 引擎的分段或時間戳處理
+python -m tests.test_seq_asr    # 動了 seq_asr.py / seq_layout.py 或序列版面格式
 python -m tests.test_e2e_smoke  # 動了任何東西,跑這個確認主幹沒斷
 node tests/test_panel_voicefx.js  # 動了 host.jsx 的掛效果邏輯或 PREMIERE_VOICE_FX
 node tests/test_panel_vocab.js    # 動了提示詞長度估算或教學類型編輯器
@@ -112,6 +113,7 @@ node tests/test_panel_stop.js     # 動了停止鈕或子行程的收尾邏輯
 node tests/test_panel_merge.js    # 動了多檔合併、輸出資料夾命名或檔案排序
 node tests/test_panel_errors.js   # 動了 ERROR_TABLE 或錯誤訊息的解讀
 node tests/test_panel_progress.js # 動了進度回報或 modules/progress.py 的格式
+node tests/test_panel_layout.js   # 動了 prDumpSequenceLayout 或序列版面的欄位
 ```
 
 ⚠️ **十三套全部都要跑,而且不要接管線。**`python -m tests.xxx | tail` 的離開碼

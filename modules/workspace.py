@@ -34,7 +34,13 @@ _INTERNAL_FILES = {
     "03_timeline.v1.json",  # 給剪輯引擎吃的中繼格式
     "04_project_raw.xml",   # 還沒加審閱標記的專案
     "05_layout.json",       # 從 Premiere 讀回來的序列版面
+    "05_seq_audio.wav",     # 依序列時間軸重建的口白(給重新辨識用)
 }
+
+# 「依序列重新辨識」會產生數量不固定的中繼檔,列不完,用前綴認:
+#   05_src_<路徑雜湊>.wav          每個來源檔抽出來的音軌
+#   05_transcript_asr_<內容雜湊>.json  該序列的辨識結果快取
+_INTERNAL_PREFIXES = ("05_src_", "05_transcript_asr_")
 
 # 早期版本留下、現在已經沒有任何程式在讀的檔案
 _OBSOLETE_FILES = {
@@ -44,7 +50,7 @@ _OBSOLETE_FILES = {
 
 def wpath(work_dir: str, filename: str) -> str:
     """這個檔案該放哪。程式自用的收進 _work/,其餘留在最外層。"""
-    if filename in _INTERNAL_FILES:
+    if filename in _INTERNAL_FILES or filename.startswith(_INTERNAL_PREFIXES):
         return os.path.join(work_dir, INTERNAL_DIR, filename)
     return os.path.join(work_dir, filename)
 

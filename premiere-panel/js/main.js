@@ -1752,4 +1752,82 @@
       });
     });
   });
+
+  // ---------- 以目前序列「重新辨識」產生字幕 ----------
+  // 跟上面那顆的差別:上面是拿當初的轉錄快取重新對位(快,但只能用在本工具
+  // 處理過的影片);這顆是重新聽一次序列裡的口白(慢,但任何序列都能用)。
+  $("asrHead").addEventListener("click", function () {
+    var body = $("asrBody");
+    var open = body.style.display === "none";
+    body.style.display = open ? "block" : "none";
+    $("asrToggle").textContent = open ? "▾" : "▸";
+  });
+
+  function asrSay(t, ok) {
+    var m = $("asrMsg");
+    m.textContent = t;
+    m.style.color = ok ? "#2e8b57" : "#e06c6c";
+  }
+
+  $("asrFromSeq").addEventListener("click", function () {
+    var btn = $("asrFromSeq");
+    btn.disabled = true;
+    asrSay("讀取目前序列的版面…", true);
+
+    // 輸出放哪:剛跑過一支片就放那支的資料夾(產物集中、抽出來的音軌也
+    // 能重複利用);沒跑過就用一個固定的資料夾 —— 這功能本來就不需要
+    // 「先選一支影片」。資料夾名刻意用純英文(中文路徑在 ExtendScript 有雷)。
+    var outDir = lastVideos.length
+      ? outDirOf(lastVideos)
+      : path.join(PROJECT_DIR, "output", "_sequence");
+    var workDir = path.join(outDir, "_work");
+    try {
+      if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+      if (!fs.existsSync(workDir)) fs.mkdirSync(workDir, { recursive: true });
+    } catch (e) {}
+
+    var layout = toFwd(path.join(workDir, "05_layout.json"));
+    cs.evalScript('prDumpSequenceLayout("' + layout + '")', function (r) {
+      if (!r || r.indexOf("OK") !== 0) {
+        asrSay("讀不到序列版面:" + r, false); btn.disabled = false; return;
+      }
+      asrSay("重新辨識目前序列的口白中…(長片要好幾分鐘)", true);
+      appendLog("▶ 依目前序列重新辨識已啟動…\n");
+      // spawn + track:track 才會讓「停止」鈕出現、也才停得掉。
+      // 這一步會跑 Whisper,長片好幾分鐘,不給停止鈕跟當掉沒兩樣。
+      var proc = track(cp.spawn(PYTHON,
+        ["-u", "-m", "modules.seq_asr", layout, outDir],
+        { cwd: PROJECT_DIR }));
+      proc.stdout.on("data", function (d) { appendLog(d.toString()); });
+      proc.stderr.on("data", function (d) { appendLog(d.toString()); });
+      proc.on("error", function (e) {
+        asrSay("無法啟動 Python,詳見下方訊息", false);
+        appendLog(pythonFailMsg(e) + "\n");
+        btn.disabled = false;
+      });
+      proc.on("close", function (code) {
+        // 停止分支一定要排在離開碼判斷「前面」:被 taskkill 收掉的行程
+        // 離開碼也不是 0,不先分辨就會把「使用者按停止」報成失敗
+        if (stopping) {
+          asrSay("已停止,字幕沒有產生", true);
+          btn.disabled = false; return;
+        }
+        if (code !== 0) {
+          asrSay("辨識字幕失敗,說明在下方", false);
+          explainInto();
+          btn.disabled = false; return;
+        }
+        var srt = toFwd(path.join(outDir, "05_subtitles_asr.srt"));
+        // 跟其他路徑一樣:複製成新檔名再匯入,否則 Premiere 會沿用專案裡的
+        // 舊字幕、看起來像「沒有重新生」
+        cs.evalScript('prImportCaptionsToActive("' + srt + '")', function (r2) {
+          if (r2 && r2.indexOf("SUBS_FAIL") < 0 && r2.indexOf("ERROR") !== 0) {
+            asrSay("字幕已依目前序列重新辨識完成" + subsMsg(r2), true);
+            cleanOldSubtitleCopies(outDir, 3);
+          } else { asrSay("字幕產好了,但匯入出錯:" + r2, false); }
+          btn.disabled = false;
+        });
+      });
+    });
+  });
 })();
